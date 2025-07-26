@@ -13,6 +13,32 @@ class WebhookController {
       Logger.section('Incoming Webhook');
       Logger.webhook('Received request');
       
+      // Validate webhook secret if configured
+      const webhookSecret = process.env.RAISELY_WEBHOOK_SECRET;
+      if (webhookSecret) {
+        const providedSecret = req.headers['x-webhook-secret'] || 
+                              req.headers['x-raisely-secret'] || 
+                              req.headers['authorization']?.replace('Bearer ', '');
+        
+        if (!providedSecret) {
+          Logger.error('Webhook secret required but not provided');
+          return res.status(401).json({ 
+            error: 'Unauthorized', 
+            message: 'Webhook secret required' 
+          });
+        }
+        
+        if (providedSecret !== webhookSecret) {
+          Logger.error('Invalid webhook secret provided');
+          return res.status(403).json({ 
+            error: 'Forbidden', 
+            message: 'Invalid webhook secret' 
+          });
+        }
+        
+        Logger.success('Webhook secret validated');
+      }
+      
       const webhookData = req.body;
       
       // Extract event type from the correct location
