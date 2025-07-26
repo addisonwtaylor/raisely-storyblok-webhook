@@ -124,7 +124,52 @@ class StoryblokService {
         console.log(`🔍 Direct slug search failed:`, error.message);
       }
 
-      // Create the campaign folder
+      // Create the campaign folder - try different approaches
+      console.log(`📁 Attempting to create folder with multiple fallback methods...`);
+      
+      // Method 1: With content field
+      folderData = {
+        story: {
+          name: campaignName,
+          slug: campaignSlug,
+          parent_id: parentId,
+          is_folder: true,
+          content: {
+            component: 'page'
+          }
+        }
+      };
+      
+      console.log(`📁 Method 1: Creating with content field`);
+      try {
+        const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
+        console.log(`✅ Created campaign folder: ${campaignName}`);
+        return response.data.story;
+      } catch (contentError) {
+        console.log(`❌ Method 1 failed:`, contentError.message);
+      }
+      
+      // Method 2: Without content field but with different slug
+      const altSlug = `${campaignSlug}-campaign`;
+      folderData = {
+        story: {
+          name: campaignName,
+          slug: altSlug,
+          parent_id: parentId,
+          is_folder: true
+        }
+      };
+      
+      console.log(`📁 Method 2: Creating with alternative slug: ${altSlug}`);
+      try {
+        const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
+        console.log(`✅ Created campaign folder with alt slug: ${campaignName}`);
+        return response.data.story;
+      } catch (altSlugError) {
+        console.log(`❌ Method 2 failed:`, altSlugError.message);
+      }
+      
+      // Method 3: Original method (for detailed error logging)
       folderData = {
         story: {
           name: campaignName,
@@ -133,6 +178,8 @@ class StoryblokService {
           is_folder: true
         }
       };
+      
+      console.log(`📁 Method 3: Original method for detailed error logging`);
       
       console.log(`📁 Creating campaign folder with data:`, {
         name: campaignName,
