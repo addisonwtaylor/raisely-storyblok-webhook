@@ -58,10 +58,16 @@ class StoryblokService {
 
     try {
       // Try to find existing folder
+      console.log(`🔍 Looking for existing campaign folder with slug: ${fullSlug}`);
       try {
         const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
           with_slug: fullSlug,
           story_only: 1
+        });
+
+        console.log(`🔍 Search response:`, {
+          found: response.data.stories.length,
+          stories: response.data.stories.map(s => ({ id: s.id, name: s.name, slug: s.slug }))
         });
 
         if (response.data.stories.length > 0) {
@@ -69,8 +75,7 @@ class StoryblokService {
           return response.data.stories[0];
         }
       } catch (error) {
-        // Folder doesn't exist, we'll create it
-        console.log(`📁 Campaign folder not found, will create: ${campaignName}`);
+        console.log(`� Search failed, will create new folder:`, error.message);
       }
 
       // Create the campaign folder
@@ -80,7 +85,10 @@ class StoryblokService {
           name: campaignName,
           slug: campaignSlug,
           parent_id: parentId,
-          is_folder: true
+          is_folder: true,
+          content: {
+            component: 'page'
+          }
         }
       };
       
