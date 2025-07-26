@@ -82,7 +82,7 @@ class StoryblokService {
           is_folder: true
         }
       };
-
+      
       console.log(`📁 Creating campaign folder with data:`, {
         name: campaignName,
         slug: campaignSlug,
