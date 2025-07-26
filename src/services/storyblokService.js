@@ -101,6 +101,9 @@ class StoryblokService {
       return response.data.story;
 
     } catch (error) {
+      console.error(`❌ Error object keys:`, Object.keys(error));
+      console.error(`❌ Error has response:`, !!error.response);
+      
       // Log the raw response if available
       if (error.response) {
         console.error(`❌ Raw Storyblok response:`, {
@@ -109,6 +112,8 @@ class StoryblokService {
           data: error.response.data,
           headers: error.response.headers
         });
+      } else {
+        console.error(`❌ No response object available`);
       }
       
       console.error(`❌ Error handling campaign folder for ${campaignName}:`, {
