@@ -59,9 +59,13 @@ class WebhookController {
       }
 
       // Sync to Storyblok, passing the event type
-      await storyblokService.syncFundraiser(extractedData, eventType);
+      const result = await storyblokService.syncFundraiser(extractedData, eventType);
 
-      Logger.result(`Complete: ${extractedData.name}`);
+      if (result.action === 'created') {
+        Logger.success(`Created story: ${extractedData.name}`);
+      } else if (result.action === 'updated') {
+        Logger.success(`Updated story: ${extractedData.name}`);
+      }
 
       // Return success response
       res.status(200).json({ 

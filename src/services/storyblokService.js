@@ -50,10 +50,103 @@ class StoryblokService {
   }
 
   /**
+   * Get or create the events folder
+   */
+  async getOrCreateEventsFolder() {
+    try {
+      // First do a broader search for any events folder
+      const allStoriesResponse = await this.client.get(`spaces/${this.spaceId}/stories`, {
+        per_page: 100
+      });
+
+      // Look for events folder in all stories
+      const eventsFolder = allStoriesResponse.data.stories.find(story => 
+        story.is_folder && (story.slug === 'events' || story.name.toLowerCase() === 'events')
+      );
+
+      if (eventsFolder) {
+        return eventsFolder;
+      }
+
+      // Check if there's already an events story (not folder)
+      const eventsStory = allStoriesResponse.data.stories.find(story => 
+        !story.is_folder && story.slug === 'events'
+      );
+
+      if (eventsStory) {
+        Logger.warning(`Events exists as story, not folder. Using it anyway.`);
+        return eventsStory;
+      }
+
+      // Create events folder if it doesn't exist
+      Logger.step(`Creating events folder`);
+      const folderData = {
+        story: {
+          name: 'Events',
+          slug: 'events',
+          is_folder: true,
+          published: true,
+          content: {}
+        }
+      };
+
+      const createResponse = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
+      Logger.success(`Created events folder`);
+      return createResponse.data.story;
+    } catch (error) {
+      Logger.error(`Failed to get/create events folder`, error.response?.data || error.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Create an event story as a draft
+   */
+  async createEventStory(campaignName) {
+    try {
+      const campaignSlug = this.createSlug(campaignName);
+      
+      // Get or create the events folder
+      const eventsFolder = await this.getOrCreateEventsFolder();
+      if (!eventsFolder) {
+        Logger.error(`Cannot create event without events folder`);
+        return null;
+      }
+      
+      Logger.step(`Creating event: ${campaignName}`);
+      
+      const storyData = {
+        story: {
+          name: campaignName,
+          slug: campaignSlug,
+          parent_id: eventsFolder.id,
+          content: {
+            component: 'event',
+            title: campaignName,
+            slug: campaignSlug
+          },
+          is_folder: false,
+          published: false // Keep as draft
+        }
+      };
+
+      const response = await this.client.post(`spaces/${this.spaceId}/stories`, storyData);
+      Logger.success(`Created event: ${campaignName}`);
+      return response.data.story;
+    } catch (error) {
+      Logger.error(`Failed to create event: ${campaignName}`, error);
+      return null;
+    }
+  }
+
+  /**
    * Get or create a campaign folder in Storyblok
    */
   async getOrCreateCampaignFolder(campaignName) {
     try {
+      // Ensure fundraisers folder exists first and cache the parent ID
+      const fundraisersParentId = await this.getFundraisersParentId();
+      
       const campaignSlug = this.createSlug(campaignName);
       const fullSlug = `fundraisers/${campaignSlug}`;
 
@@ -92,12 +185,13 @@ class StoryblokService {
       }
 
       // Create the campaign folder if it truly doesn't exist
-      console.log(`📁 Campaign folder not found, creating: ${campaignName}`);
+      Logger.warning(`Not found: ${campaignName}`);
+      Logger.step(`Creating campaign: ${campaignName}`);
       const folderData = {
         story: {
           name: campaignName,
           slug: campaignSlug,
-          parent_id: await this.getFundraisersParentId(),
+          parent_id: fundraisersParentId,
           is_folder: true,
           content: {
             component: 'folder'
@@ -120,6 +214,8 @@ class StoryblokService {
    */
   async getFundraisersParentId() {
     try {
+      Logger.step(`Looking for fundraisers folder`);
+      
       // Search for all stories with the exact slug 'fundraisers'
       const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
         with_slug: 'fundraisers',
@@ -133,7 +229,7 @@ class StoryblokService {
         );
         
         if (fundraisersFolder) {
-          console.log('✅ Found existing fundraisers folder with ID:', fundraisersFolder.id);
+          Logger.success(`Found: fundraisers folder`);
           return fundraisersFolder.id;
         }
       }
@@ -152,12 +248,13 @@ class StoryblokService {
       );
       
       if (exactMatch) {
-        console.log('✅ Found existing fundraisers folder via broad search with ID:', exactMatch.id);
+        Logger.success(`Found: fundraisers folder`);
         return exactMatch.id;
       }
 
       // Only create if truly doesn't exist
-      console.log('📁 Fundraisers folder not found, creating new one...');
+      Logger.warning(`Not found: fundraisers folder`);
+      Logger.step(`Creating fundraisers folder`);
       const folderData = {
         story: {
           name: 'Fundraisers',
@@ -170,11 +267,11 @@ class StoryblokService {
       };
 
       const createResponse = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
-      console.log('✅ Created fundraisers parent folder');
+      Logger.success(`Created: fundraisers folder`);
       return createResponse.data.story.id;
 
     } catch (error) {
-      console.error('❌ Error getting/creating fundraisers parent folder:', error);
+      Logger.error('Error getting/creating fundraisers parent folder:', error);
       throw error;
     }
   }
@@ -205,8 +302,11 @@ class StoryblokService {
         // Fundraiser doesn't exist
       }
 
-      // Find the event story to reference (quietly)
-      const eventStory = await this.findEventStory(fundraiserData.campaign);
+      // Find or create the event story to reference
+      let eventStory = await this.findEventStory(fundraiserData.campaign);
+      if (!eventStory) {
+        eventStory = await this.createEventStory(fundraiserData.campaign);
+      }
       
       // Only publish if Raisely status is ACTIVE
       const shouldPublish = fundraiserData.status === 'ACTIVE';
@@ -231,8 +331,9 @@ class StoryblokService {
         }
       };
 
-      const action = existingFundraiser ? 'Updating' : 'Creating';
-      Logger.step(`${action}: ${storyData.story.name}`);
+      const actionText = existingFundraiser ? 'Updating' : 'Creating';
+      const actionType = existingFundraiser ? 'updated' : 'created';
+      Logger.step(`${actionText}: ${storyData.story.name}`);
 
       let response;
       if (existingFundraiser) {
@@ -276,7 +377,7 @@ class StoryblokService {
         Logger.info(`Saved as draft: ${fundraiserData.name}`);
       }
 
-      return response.data.story;
+      return { story: response.data.story, action: actionType };
 
     } catch (error) {
       Logger.error(`Error creating/updating fundraiser ${fundraiserData.name}`, error);
@@ -314,17 +415,16 @@ class StoryblokService {
         if (existingResponse.data.stories.length > 0) {
           Logger.success(`Found: ${fundraiserData.name}`);
           Logger.warning(`Fundraiser already exists, skipping creation`);
-          return existingResponse.data.stories[0];
+          return { story: existingResponse.data.stories[0], action: 'found' };
         } else {
           Logger.warning(`Fundraiser not found: ${fundraiserData.name}`);
         }
       }
 
       // Create or update fundraiser
-      const fundraiser = await this.createOrUpdateFundraiser(fundraiserData, campaignFolder);
+      const result = await this.createOrUpdateFundraiser(fundraiserData, campaignFolder);
 
-
-      return fundraiser;
+      return result;
 
     } catch (error) {
       Logger.error('Error syncing fundraiser', error);
