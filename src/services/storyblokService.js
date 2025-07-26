@@ -2,14 +2,6 @@ const StoryblokClient = require('storyblok-js-client');
 
 class StoryblokService {
   constructor() {
-    // Debug environment variables
-    console.log('🔧 StoryblokService environment check:', {
-      hasAccessToken: !!process.env.STORYBLOK_ACCESS_TOKEN,
-      hasSpaceId: !!process.env.STORYBLOK_SPACE_ID,
-      spaceId: process.env.STORYBLOK_SPACE_ID,
-      tokenLength: process.env.STORYBLOK_ACCESS_TOKEN?.length
-    });
-    
     this.client = new StoryblokClient({
       oauthToken: process.env.STORYBLOK_ACCESS_TOKEN,
     });
@@ -124,10 +116,7 @@ class StoryblokService {
         console.log(`🔍 Direct slug search failed:`, error.message);
       }
 
-      // Create the campaign folder - try different approaches
-      console.log(`📁 Attempting to create folder with multiple fallback methods...`);
-      
-      // Method 1: With content field
+      // Create the campaign folder
       folderData = {
         story: {
           name: campaignName,
@@ -139,47 +128,6 @@ class StoryblokService {
           }
         }
       };
-      
-      console.log(`📁 Method 1: Creating with content field`);
-      try {
-        const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
-        console.log(`✅ Created campaign folder: ${campaignName}`);
-        return response.data.story;
-      } catch (contentError) {
-        console.log(`❌ Method 1 failed:`, contentError.message);
-      }
-      
-      // Method 2: Without content field but with different slug
-      const altSlug = `${campaignSlug}-campaign`;
-      folderData = {
-        story: {
-          name: campaignName,
-          slug: altSlug,
-          parent_id: parentId,
-          is_folder: true
-        }
-      };
-      
-      console.log(`📁 Method 2: Creating with alternative slug: ${altSlug}`);
-      try {
-        const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
-        console.log(`✅ Created campaign folder with alt slug: ${campaignName}`);
-        return response.data.story;
-      } catch (altSlugError) {
-        console.log(`❌ Method 2 failed:`, altSlugError.message);
-      }
-      
-      // Method 3: Original method (for detailed error logging)
-      folderData = {
-        story: {
-          name: campaignName,
-          slug: campaignSlug,
-          parent_id: parentId,
-          is_folder: true
-        }
-      };
-      
-      console.log(`📁 Method 3: Original method for detailed error logging`);
       
       console.log(`📁 Creating campaign folder with data:`, {
         name: campaignName,
@@ -193,35 +141,10 @@ class StoryblokService {
       return response.data.story;
 
     } catch (error) {
-      console.error(`❌ Full error object:`, error);
-      console.error(`❌ Error object keys:`, Object.keys(error));
-      console.error(`❌ Error.response type:`, typeof error.response);
-      console.error(`❌ Error.response value:`, error.response);
-      console.error(`❌ Error has response:`, !!error.response);
-      
-      // Log the raw response if available
-      if (error.response) {
-        console.error(`❌ Raw Storyblok response:`, {
-          status: error.response.status,
-          statusText: error.response.statusText,
-          data: error.response.data,
-          headers: error.response.headers
-        });
-      } else {
-        console.error(`❌ No response object available`);
-      }
-      
-      // Check if this is a network/timeout issue
-      if (error.code) {
-        console.error(`❌ Error code:`, error.code);
-      }
-      
-      console.error(`❌ Error handling campaign folder for ${campaignName}:`, {
+      console.error(`❌ Error creating campaign folder for ${campaignName}:`, {
         message: error.message,
         status: error.status || error.response?.status,
-        response: error.response?.data,
-        requestData: folderData,
-        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+        response: error.response?.data || 'No response data'
       });
       throw error;
     }
