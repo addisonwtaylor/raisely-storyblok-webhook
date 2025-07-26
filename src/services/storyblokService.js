@@ -116,7 +116,94 @@ class StoryblokService {
         console.log(`🔍 Direct slug search failed:`, error.message);
       }
 
-      // Create the campaign folder
+      // Try different folder creation approaches
+      console.log(`📁 Attempting to create campaign folder: ${campaignName}`);
+      
+      // Method 1: Minimal folder structure
+      try {
+        console.log(`🔧 Method 1: Minimal folder (no content)`);
+        const minimalData = {
+          story: {
+            name: campaignName,
+            slug: campaignSlug,
+            parent_id: parentId,
+            is_folder: true
+          }
+        };
+        
+        const response = await this.client.post(`spaces/${this.spaceId}/stories`, minimalData);
+        console.log(`✅ Created campaign folder (minimal): ${campaignName}`);
+        return response.data.story;
+        
+      } catch (minimalError) {
+        console.log(`❌ Method 1 failed:`, {
+          message: minimalError.message,
+          status: minimalError.status,
+          details: minimalError.response?.data
+        });
+      }
+      
+      // Method 2: With empty content
+      try {
+        console.log(`🔧 Method 2: With empty content`);
+        const emptyContentData = {
+          story: {
+            name: campaignName,
+            slug: campaignSlug,
+            parent_id: parentId,
+            is_folder: true,
+            content: {}
+          }
+        };
+        
+        const response = await this.client.post(`spaces/${this.spaceId}/stories`, emptyContentData);
+        console.log(`✅ Created campaign folder (empty content): ${campaignName}`);
+        return response.data.story;
+        
+      } catch (emptyContentError) {
+        console.log(`❌ Method 2 failed:`, {
+          message: emptyContentError.message,
+          status: emptyContentError.status,
+          details: emptyContentError.response?.data
+        });
+      }
+      
+      // Method 3: Check what components are available first
+      try {
+        console.log(`🔧 Method 3: Getting available components`);
+        const componentsResponse = await this.client.get(`spaces/${this.spaceId}/components`);
+        console.log(`📋 Available components:`, componentsResponse.data.components.map(c => c.name));
+        
+        // Use the first available component
+        const firstComponent = componentsResponse.data.components[0]?.name || 'page';
+        console.log(`🔧 Using component: ${firstComponent}`);
+        
+        const componentData = {
+          story: {
+            name: campaignName,
+            slug: campaignSlug,
+            parent_id: parentId,
+            is_folder: true,
+            content: {
+              component: firstComponent
+            }
+          }
+        };
+        
+        const response = await this.client.post(`spaces/${this.spaceId}/stories`, componentData);
+        console.log(`✅ Created campaign folder (with ${firstComponent}): ${campaignName}`);
+        return response.data.story;
+        
+      } catch (componentError) {
+        console.log(`❌ Method 3 failed:`, {
+          message: componentError.message,
+          status: componentError.status,
+          details: componentError.response?.data
+        });
+      }
+      
+      // Method 4: Final attempt with detailed error logging
+      console.log(`🔧 Method 4: Final attempt with detailed logging`);
       folderData = {
         story: {
           name: campaignName,
@@ -129,15 +216,9 @@ class StoryblokService {
         }
       };
       
-      console.log(`📁 Creating campaign folder with data:`, {
-        name: campaignName,
-        slug: campaignSlug,
-        parent_id: parentId,
-        folderData: JSON.stringify(folderData, null, 2)
-      });
-
+      console.log(`📁 Final attempt with data:`, JSON.stringify(folderData, null, 2));
       const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
-      console.log(`✅ Created campaign folder: ${campaignName}`);
+      console.log(`✅ Created campaign folder (final attempt): ${campaignName}`);
       return response.data.story;
 
     } catch (error) {
