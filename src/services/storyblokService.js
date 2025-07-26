@@ -119,20 +119,50 @@ class StoryblokService {
       // Try different folder creation approaches
       console.log(`📁 Attempting to create campaign folder: ${campaignName}`);
       
-      // Method 1: Minimal folder structure
+      // Method 0: Test permissions by creating in root
       try {
-        console.log(`🔧 Method 1: Minimal folder (no content)`);
+        console.log(`🔧 Method 0: Test folder in root (permissions test)`);
+        const rootTestData = {
+          story: {
+            name: `Test-${Date.now()}`,
+            slug: `test-${Date.now()}`,
+            is_folder: true
+          }
+        };
+        
+        const response = await this.client.post(`spaces/${this.spaceId}/stories`, rootTestData);
+        console.log(`✅ Root test folder created - permissions OK!`);
+        
+        // Delete the test folder immediately
+        await this.client.delete(`spaces/${this.spaceId}/stories/${response.data.story.id}`);
+        console.log(`🗑️ Test folder deleted`);
+        
+      } catch (permissionError) {
+        console.log(`❌ Method 0 failed - likely permissions issue:`, {
+          message: permissionError.message,
+          status: permissionError.status,
+          details: permissionError.response?.data
+        });
+        
+        // If we can't create anything, throw early
+        throw new Error(`No write permissions to Storyblok space: ${permissionError.message}`);
+      }
+      
+      // Method 1: Minimal folder with unique slug
+      try {
+        console.log(`🔧 Method 1: Minimal folder with unique slug`);
+        const uniqueSlug = `${campaignSlug}-${Date.now()}`;
         const minimalData = {
           story: {
-            name: campaignName,
-            slug: campaignSlug,
+            name: `${campaignName} ${Date.now()}`,
+            slug: uniqueSlug,
             parent_id: parentId,
             is_folder: true
           }
         };
         
         const response = await this.client.post(`spaces/${this.spaceId}/stories`, minimalData);
-        console.log(`✅ Created campaign folder (minimal): ${campaignName}`);
+        console.log(`✅ Created campaign folder (unique slug): ${campaignName}`);
         return response.data.story;
         
       } catch (minimalError) {
@@ -202,8 +232,53 @@ class StoryblokService {
         });
       }
       
-      // Method 4: Final attempt with detailed error logging
-      console.log(`🔧 Method 4: Final attempt with detailed logging`);
+      // Method 4: Try with different space ID verification
+      try {
+        console.log(`🔧 Method 4: Verify space ID and try again`);
+        
+        // Double-check space ID by getting space info
+        const spaceInfo = await this.client.get(`spaces/${this.spaceId}`);
+        console.log(`🏢 Space info:`, {
+          id: spaceInfo.data.space.id,
+          name: spaceInfo.data.space.name,
+          plan: spaceInfo.data.space.plan
+        });
+        
+        // Try creating with explicit space verification
+        folderData = {
+          story: {
+            name: campaignName,
+            slug: campaignSlug,
+            parent_id: parentId,
+            is_folder: true
+          }
+        };
+        
+        console.log(`📁 Verified space attempt with data:`, JSON.stringify(folderData, null, 2));
+        const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
+        console.log(`✅ Created campaign folder (verified space): ${campaignName}`);
+        return response.data.story;
+        
+      } catch (spaceError) {
+        console.log(`❌ Method 4 failed:`, {
+          message: spaceError.message,
+          status: spaceError.status,
+          details: spaceError.response?.data,
+          stack: spaceError.stack
+        });
+      }
+      
+      // Method 5: Final attempt with maximum debugging
+      console.log(`🔧 Method 5: Final attempt with maximum debugging`);
+      console.log(`📊 Request details:`, {
+        url: `spaces/${this.spaceId}/stories`,
+        method: 'POST',
+        spaceId: this.spaceId,
+        parentId: parentId,
+        slug: campaignSlug,
+        name: campaignName
+      });
+      
       folderData = {
         story: {
           name: campaignName,
