@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const webhookController = require('./controllers/webhookController');
+const Logger = require('./utils/logger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,16 +26,18 @@ app.get('/health', (req, res) => {
 });
 
 // Webhook endpoint for Raisely
-app.post('/webhook/raisely', webhookController.handleRaiselyWebhook);
+app.post('/webhook/raisely', webhookController.handleRaiselyWebhook.bind(webhookController));
 
-// Test endpoint for development
+// Test endpoints for development
 if (process.env.NODE_ENV === 'development') {
-  app.post('/test/webhook', webhookController.testWebhook);
+  app.post('/test/webhook', webhookController.testWebhook.bind(webhookController));
+  app.post('/test/webhook/created', webhookController.testWebhookCreated.bind(webhookController));
+  app.post('/test/webhook/updated', webhookController.testWebhookUpdated.bind(webhookController));
 }
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
+  Logger.error('Unhandled server error', err);
   res.status(500).json({ 
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
@@ -43,13 +46,18 @@ app.use((err, req, res, next) => {
 
 // 404 handler
 app.use('*', (req, res) => {
+  Logger.warning(`Route not found: ${req.method} ${req.originalUrl}`);
   res.status(404).json({ error: 'Route not found' });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Webhook service running on port ${PORT}`);
-  console.log(`📡 Webhook endpoint: http://localhost:${PORT}/webhook/raisely`);
-  console.log(`❤️  Health check: http://localhost:${PORT}/health`);
+  Logger.section('Webhook Service');
+  Logger.server(`Running on port ${PORT}`);
+  Logger.info(`Health: http://localhost:${PORT}/health`);
+  if (process.env.NODE_ENV === 'development') {
+    Logger.info(`Test endpoints available`);
+  }
+  Logger.space();
 });
 
 module.exports = app;

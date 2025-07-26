@@ -1,4 +1,7 @@
 const storyblokService = require('../services/storyblokService');
+const Logger = require('../utils/logger');
+const fs = require('fs');
+const path = require('path');
 
 class WebhookController {
   /**
@@ -6,17 +9,19 @@ class WebhookController {
    */
   async handleRaiselyWebhook(req, res) {
     try {
-      console.log('📨 Received Raisely webhook:', req.headers['user-agent'] || 'Unknown');
+      Logger.section('Incoming Webhook');
+      Logger.webhook('Received request');
       
       const webhookData = req.body;
       
-      // Log the webhook type and basic info
-      console.log('Webhook event:', webhookData.type || 'unknown');
-      console.log('Webhook data keys:', Object.keys(webhookData));
+      // Extract event type from the correct location
+      const eventType = webhookData.data.type || webhookData.type || 'unknown';
+      
+      Logger.webhook('Processing', eventType);
 
       // Validate webhook data structure
       if (!webhookData.data) {
-        console.warn('⚠️  No data field in webhook payload');
+        Logger.warning('Invalid webhook payload - missing data field');
         return res.status(400).json({ 
           error: 'Invalid webhook payload', 
           message: 'Missing data field' 
@@ -35,15 +40,21 @@ class WebhookController {
       const extractedData = WebhookController.extractFundraiserData(profileData);
       
       if (!extractedData) {
-        console.warn('⚠️  Could not extract valid fundraiser data');
+        Logger.warning('Could not extract valid fundraiser data from webhook');
         return res.status(400).json({ 
           error: 'Invalid fundraiser data', 
           message: 'Required fields missing' 
         });
       }
 
-      // Sync to Storyblok
-      await storyblokService.syncFundraiser(extractedData);
+      // Sync to Storyblok, passing the event type
+      await storyblokService.syncFundraiser(extractedData, eventType);
+
+      Logger.success(`Webhook processed successfully`, {
+        fundraiser: extractedData.name,
+        campaign: extractedData.campaign,
+        event: eventType
+      });
 
       // Return success response
       res.status(200).json({ 
@@ -54,7 +65,7 @@ class WebhookController {
       });
 
     } catch (error) {
-      console.error('❌ Webhook processing error:', error);
+      Logger.error('Webhook processing failed', error);
       res.status(500).json({ 
         error: 'Webhook processing failed', 
         message: error.message 
@@ -72,7 +83,7 @@ class WebhookController {
       
       // Required fields validation
       if (!profile.name) {
-        console.warn('⚠️  Missing required field: name');
+        Logger.warning('Missing required field: name');
         return null;
       }
 
@@ -120,7 +131,7 @@ class WebhookController {
         status: profile.status || 'DRAFT' // Default to DRAFT if no status
       };
 
-      console.log('📋 Extracted fundraiser data:', {
+      Logger.info('Extracted fundraiser data', {
         name: extractedData.name,
         campaign: extractedData.campaign,
         targetAmount: extractedData.targetAmount,
@@ -131,7 +142,7 @@ class WebhookController {
       return extractedData;
 
     } catch (error) {
-      console.error('❌ Error extracting fundraiser data:', error);
+      Logger.error('Error extracting fundraiser data', error);
       return null;
     }
   }
@@ -151,30 +162,100 @@ class WebhookController {
   }
 
   /**
-   * Test endpoint to manually trigger webhook processing
+   * Test endpoint for profile.created events
+   */
+  async testWebhookCreated(req, res) {
+    try {
+      const testDataPath = path.join(__dirname, '../../test-data/profile-created-webhook.json');
+      
+      if (!fs.existsSync(testDataPath)) {
+        return res.status(400).json({ 
+          error: 'Test data file not found', 
+          message: 'Please create and populate test-data/profile-created-webhook.json with real webhook data',
+          path: testDataPath
+        });
+      }
+
+      const testDataContent = fs.readFileSync(testDataPath, 'utf8');
+      let testData;
+      
+      try {
+        testData = JSON.parse(testDataContent);
+      } catch (parseError) {
+        return res.status(400).json({ 
+          error: 'Invalid JSON in test data file', 
+          message: 'Please check the JSON syntax in profile-created-webhook.json',
+          parseError: parseError.message
+        });
+      }
+
+      if (!testData.data || !testData.data.data) {
+        return res.status(400).json({ 
+          error: 'Invalid test data structure', 
+          message: 'Test data must have the structure: { data: { data: { ... } } }'
+        });
+      }
+
+      Logger.test('Testing profile.created event with real webhook data');
+      req.body = testData;
+      await this.handleRaiselyWebhook(req, res);
+
+    } catch (error) {
+      res.status(500).json({ error: 'Test profile.created failed', message: error.message });
+    }
+  }
+
+  /**
+   * Test endpoint for profile.updated events
+   */
+  async testWebhookUpdated(req, res) {
+    try {
+      const testDataPath = path.join(__dirname, '../../test-data/profile-updated-webhook.json');
+      
+      if (!fs.existsSync(testDataPath)) {
+        return res.status(400).json({ 
+          error: 'Test data file not found', 
+          message: 'Please create and populate test-data/profile-updated-webhook.json with real webhook data',
+          path: testDataPath
+        });
+      }
+
+      const testDataContent = fs.readFileSync(testDataPath, 'utf8');
+      let testData;
+      
+      try {
+        testData = JSON.parse(testDataContent);
+      } catch (parseError) {
+        return res.status(400).json({ 
+          error: 'Invalid JSON in test data file', 
+          message: 'Please check the JSON syntax in profile-updated-webhook.json',
+          parseError: parseError.message
+        });
+      }
+
+      if (!testData.data || !testData.data.data) {
+        return res.status(400).json({ 
+          error: 'Invalid test data structure', 
+          message: 'Test data must have the structure: { data: { data: { ... } } }'
+        });
+      }
+
+      Logger.test('Testing profile.updated event with real webhook data');
+      req.body = testData;
+      await this.handleRaiselyWebhook(req, res);
+
+    } catch (error) {
+      res.status(500).json({ error: 'Test profile.updated failed', message: error.message });
+    }
+  }
+
+  /**
+   * Test endpoint to manually trigger webhook processing (legacy - defaults to created)
    */
   async testWebhook(req, res) {
     try {
-      const testData = {
-        type: 'profile.created',
-        data: {
-          profile: {
-            name: 'Test Fundraiser',
-            campaign: {
-              name: 'Test Campaign'
-            },
-            description: 'This is a test fundraiser',
-            target: 50000, // $500 in cents
-            total: 15000,  // $150 in cents
-            path: 'test-campaign/test-fundraiser',
-            uuid: 'test-uuid-123'
-          }
-        }
-      };
-
-      req.body = testData;
-      await WebhookController.handleRaiselyWebhook(req, res);
-
+      Logger.test('Using legacy test endpoint - defaulting to profile.created');
+      return this.testWebhookCreated(req, res);
     } catch (error) {
       res.status(500).json({ error: 'Test failed', message: error.message });
     }

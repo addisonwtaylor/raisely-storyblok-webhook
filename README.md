@@ -4,12 +4,12 @@ A Node.js webhook service that automatically syncs fundraiser profile data from 
 
 ## Features
 
-- 🔄 Automatic sync of fundraiser profiles from Raisely webhooks
-- 📁 Campaign-based folder organization in Storyblok
-- ✅ Create new or update existing fundraiser stories
-- 🛡️ Built-in security and error handling
-- 📊 Comprehensive logging
-- 🚀 Ready for both development and production
+- ✅ **Real-time sync** - Processes Raisely webhooks for profile created/updated events
+- ✅ **Smart publishing** - Auto-publishes active fundraisers, unpublishes archived ones
+- ✅ **Campaign organization** - Automatically creates and organizes campaign folders
+- ✅ **Error handling** - Comprehensive error handling with detailed logging
+- ✅ **Test endpoints** - Built-in testing with real webhook data
+- ✅ **Pretty logging** - Color-coded, timestamped logs for easy debugging
 
 ## Setup
 
@@ -30,10 +30,10 @@ cp .env.example .env
 Edit `.env` and add your Storyblok credentials:
 
 ```
-STORYBLOK_ACCESS_TOKEN=your_storyblok_access_token_here
-STORYBLOK_SPACE_ID=your_storyblok_space_id_here
-PORT=3000
+STORYBLOK_MANAGEMENT_TOKEN=your_management_token_here
+STORYBLOK_SPACE_ID=your_space_id_here
 NODE_ENV=development
+PORT=3000
 ```
 
 ### 3. Storyblok Content Type Setup
@@ -72,15 +72,30 @@ For production deployment, set `PORT=8080` in your environment.
 
 ## Endpoints
 
-### Webhook Endpoint
-- **URL**: `POST /webhook/raisely`
-- **Purpose**: Receives Raisely webhook data for profile created/updated events
-- **Usage**: Configure this URL in your Raisely webhook settings
+### Production Endpoints
 
-### Health Check
-- **URL**: `GET /health`
-- **Purpose**: Service health monitoring
-- **Response**: Current service status and timestamp
+- **`POST /webhook/raisely`** - Main webhook endpoint for Raisely
+- **`GET /health`** - Health check endpoint
+
+### Development Endpoints (NODE_ENV=development only)
+
+- **`POST /test/webhook/created`** - Test profile.created events
+- **`POST /test/webhook/updated`** - Test profile.updated events
+
+### Testing with Real Data
+
+1. Populate test files with real webhook data:
+   - `test-data/profile-created-webhook.json`
+   - `test-data/profile-updated-webhook.json`
+
+2. Run tests:
+   ```bash
+   # Test profile creation
+   curl -X POST http://localhost:3000/test/webhook/created
+   
+   # Test profile updates
+   curl -X POST http://localhost:3000/test/webhook/updated
+   ```
 
 ## Webhook Configuration in Raisely
 
@@ -137,14 +152,37 @@ The service includes comprehensive error handling:
 
 All errors are logged with timestamps and context.
 
-## Logging
+## Enhanced Logging
 
-The service provides detailed logging:
-- 📨 Webhook events received
-- 📁 Folder creation/updates
-- ✅ Successful operations
-- ⚠️ Warnings for missing data
-- ❌ Errors with full context
+The service uses color-coded, structured logging with timestamps:
+
+- 🟢 **SUCCESS** - Operations completed successfully
+- 🔵 **INFO** - General information  
+- 🟡 **WARNING** - Non-critical issues
+- 🔴 **ERROR** - Errors with stack traces
+- 🟣 **TEST** - Test-related messages
+- 🔵 **STORYBLOK** - Storyblok API operations
+- 🟢 **WEBHOOK** - Webhook processing
+
+### Example Log Output
+
+```
+─── Webhook Service ───
+19:26:26 🚀 Running on port 3000
+19:26:26 • Health: http://localhost:3000/health
+
+─── Incoming Webhook ───
+19:26:45 📨 Received request
+19:26:45 📨 [profile.updated] Processing
+
+─── Syncing Fundraiser ───
+19:26:45 🔹 Addison Taylor (Sunderland City Runs)
+19:26:45 � [SEARCH] Looking for campaign: Sunderland City Runs
+19:26:46 ✓ Found campaign: Sunderland City Runs
+19:26:46 ✓ Updated: Addison Taylor
+19:26:46 ✓ Unpublished: Addison Taylor
+19:26:46 ✓ Sync complete: Addison Taylor
+```
 
 ## Development
 

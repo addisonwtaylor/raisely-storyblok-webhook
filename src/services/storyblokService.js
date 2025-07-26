@@ -1,4 +1,5 @@
 const StoryblokClient = require('storyblok-js-client');
+const Logger = require('../utils/logger');
 
 class StoryblokService {
   constructor() {
@@ -28,7 +29,7 @@ class StoryblokService {
       const campaignSlug = this.createSlug(campaignName);
       const fullSlug = `events/${campaignSlug}`;
       
-      console.log(`🔍 Looking for event story: ${fullSlug}`);
+      Logger.storyblok(`Looking for event story: ${fullSlug}`, 'SEARCH');
       
       const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
         with_slug: fullSlug,
@@ -36,14 +37,14 @@ class StoryblokService {
       });
 
       if (response.data.stories.length > 0) {
-        console.log(`✅ Found event story: ${campaignName} (ID: ${response.data.stories[0].id})`);
+        Logger.success(`Found event story: ${campaignName} (ID: ${response.data.stories[0].id})`);
         return response.data.stories[0];
       } else {
-        console.log(`⚠️ Event story not found: ${campaignName} (${fullSlug})`);
+        Logger.warning(`Event story not found: ${campaignName} (${fullSlug})`);
         return null;
       }
     } catch (error) {
-      console.error(`❌ Error finding event story ${campaignName}:`, error.message);
+      Logger.error(`Error finding event story ${campaignName}`, error);
       return null;
     }
   }
@@ -52,256 +53,64 @@ class StoryblokService {
    * Get or create a campaign folder in Storyblok
    */
   async getOrCreateCampaignFolder(campaignName) {
-    const campaignSlug = this.createSlug(campaignName);
-    const fullSlug = `fundraisers/${campaignSlug}`;
-    let folderData = null;
-
     try {
-      // Try to find existing folder
-      console.log(`🔍 Looking for existing campaign folder with slug: ${fullSlug}`);
-      
-      // Get parent ID first
-      const parentId = await this.getFundraisersParentId();
-      console.log(`🔍 Parent fundraisers folder ID: ${parentId}`);
-      
-      // List all folders under fundraisers to see what exists
-      try {
-        const allFolders = await this.client.get(`spaces/${this.spaceId}/stories`, {
-          starts_with: parentId,
-          is_folder: true
-        });
-        
-        console.log(`🔍 All folders under fundraisers:`, {
-          found: allFolders.data.stories.length,
-          folders: allFolders.data.stories.map(s => ({ 
-            id: s.id, 
-            name: s.name, 
-            slug: s.slug, 
-            full_slug: s.full_slug 
-          }))
-        });
-        
-        // Look for existing folder by name or slug
-        const existingFolder = allFolders.data.stories.find(s => 
-          s.name === campaignName || 
-          s.slug === campaignSlug ||
-          s.full_slug === fullSlug
+      const campaignSlug = this.createSlug(campaignName);
+      const fullSlug = `fundraisers/${campaignSlug}`;
+
+      Logger.storyblok(`Looking for campaign: ${campaignName}`, 'SEARCH');
+
+      // Try to find existing folder with exact slug match
+      const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
+        with_slug: fullSlug,
+        story_only: 1
+      });
+
+      if (response.data.stories.length > 0) {
+        const existingFolder = response.data.stories.find(story => 
+          story.full_slug === fullSlug && story.is_folder
         );
         
         if (existingFolder) {
-          console.log(`📁 Found existing campaign folder: ${campaignName}`, existingFolder);
+          Logger.success(`Found campaign: ${campaignName}`);
           return existingFolder;
         }
-      } catch (error) {
-        console.log(`🔍 Failed to list folders:`, error.message);
-      }
-      
-      // Also try the original search method
-      try {
-        const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
-          with_slug: fullSlug,
-          story_only: 1
-        });
-
-        console.log(`🔍 Direct slug search response:`, {
-          found: response.data.stories.length,
-          stories: response.data.stories.map(s => ({ id: s.id, name: s.name, slug: s.slug, full_slug: s.full_slug }))
-        });
-
-        if (response.data.stories.length > 0) {
-          console.log(`📁 Found existing campaign folder via slug search: ${campaignName}`);
-          return response.data.stories[0];
-        }
-      } catch (error) {
-        console.log(`🔍 Direct slug search failed:`, error.message);
       }
 
-      // Try different folder creation approaches
-      console.log(`📁 Attempting to create campaign folder: ${campaignName}`);
-      
-      // Method 0: Test permissions by creating in root
-      try {
-        console.log(`🔧 Method 0: Test folder in root (permissions test)`);
-        const rootTestData = {
-          story: {
-            name: `Test-${Date.now()}`,
-            slug: `test-${Date.now()}`,
-            is_folder: true
-          }
-        };
-        
-        const response = await this.client.post(`spaces/${this.spaceId}/stories`, rootTestData);
-        console.log(`✅ Root test folder created - permissions OK!`);
-        
-        // Delete the test folder immediately
-        await this.client.delete(`spaces/${this.spaceId}/stories/${response.data.story.id}`);
-        console.log(`🗑️ Test folder deleted`);
-        
-      } catch (permissionError) {
-        console.log(`❌ Method 0 failed - likely permissions issue:`, {
-          message: permissionError.message,
-          status: permissionError.status,
-          details: permissionError.response?.data
-        });
-        
-        // If we can't create anything, throw early
-        throw new Error(`No write permissions to Storyblok space: ${permissionError.message}`);
-      }
-      
-      // Method 1: Minimal folder with unique slug
-      try {
-        console.log(`🔧 Method 1: Minimal folder with unique slug`);
-        const uniqueSlug = `${campaignSlug}-${Date.now()}`;
-        const minimalData = {
-          story: {
-            name: `${campaignName} ${Date.now()}`,
-            slug: uniqueSlug,
-            parent_id: parentId,
-            is_folder: true
-          }
-        };
-        
-        const response = await this.client.post(`spaces/${this.spaceId}/stories`, minimalData);
-        console.log(`✅ Created campaign folder (unique slug): ${campaignName}`);
-        return response.data.story;
-        
-      } catch (minimalError) {
-        console.log(`❌ Method 1 failed:`, {
-          message: minimalError.message,
-          status: minimalError.status,
-          details: minimalError.response?.data
-        });
-      }
-      
-      // Method 2: With empty content
-      try {
-        console.log(`🔧 Method 2: With empty content`);
-        const emptyContentData = {
-          story: {
-            name: campaignName,
-            slug: campaignSlug,
-            parent_id: parentId,
-            is_folder: true,
-            content: {}
-          }
-        };
-        
-        const response = await this.client.post(`spaces/${this.spaceId}/stories`, emptyContentData);
-        console.log(`✅ Created campaign folder (empty content): ${campaignName}`);
-        return response.data.story;
-        
-      } catch (emptyContentError) {
-        console.log(`❌ Method 2 failed:`, {
-          message: emptyContentError.message,
-          status: emptyContentError.status,
-          details: emptyContentError.response?.data
-        });
-      }
-      
-      // Method 3: Check what components are available first
-      try {
-        console.log(`🔧 Method 3: Getting available components`);
-        const componentsResponse = await this.client.get(`spaces/${this.spaceId}/components`);
-        console.log(`📋 Available components:`, componentsResponse.data.components.map(c => c.name));
-        
-        // Use the first available component
-        const firstComponent = componentsResponse.data.components[0]?.name || 'page';
-        console.log(`🔧 Using component: ${firstComponent}`);
-        
-        const componentData = {
-          story: {
-            name: campaignName,
-            slug: campaignSlug,
-            parent_id: parentId,
-            is_folder: true,
-            content: {
-              component: firstComponent
-            }
-          }
-        };
-        
-        const response = await this.client.post(`spaces/${this.spaceId}/stories`, componentData);
-        console.log(`✅ Created campaign folder (with ${firstComponent}): ${campaignName}`);
-        return response.data.story;
-        
-      } catch (componentError) {
-        console.log(`❌ Method 3 failed:`, {
-          message: componentError.message,
-          status: componentError.status,
-          details: componentError.response?.data
-        });
-      }
-      
-      // Method 4: Try with different space ID verification
-      try {
-        console.log(`🔧 Method 4: Verify space ID and try again`);
-        
-        // Double-check space ID by getting space info
-        const spaceInfo = await this.client.get(`spaces/${this.spaceId}`);
-        console.log(`🏢 Space info:`, {
-          id: spaceInfo.data.space.id,
-          name: spaceInfo.data.space.name,
-          plan: spaceInfo.data.space.plan
-        });
-        
-        // Try creating with explicit space verification
-        folderData = {
-          story: {
-            name: campaignName,
-            slug: campaignSlug,
-            parent_id: parentId,
-            is_folder: true
-          }
-        };
-        
-        console.log(`📁 Verified space attempt with data:`, JSON.stringify(folderData, null, 2));
-        const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
-        console.log(`✅ Created campaign folder (verified space): ${campaignName}`);
-        return response.data.story;
-        
-      } catch (spaceError) {
-        console.log(`❌ Method 4 failed:`, {
-          message: spaceError.message,
-          status: spaceError.status,
-          details: spaceError.response?.data,
-          stack: spaceError.stack
-        });
-      }
-      
-      // Method 5: Final attempt with maximum debugging
-      console.log(`🔧 Method 5: Final attempt with maximum debugging`);
-      console.log(`📊 Request details:`, {
-        url: `spaces/${this.spaceId}/stories`,
-        method: 'POST',
-        spaceId: this.spaceId,
-        parentId: parentId,
-        slug: campaignSlug,
-        name: campaignName
+      // If not found, try broader search to be sure
+      const broadResponse = await this.client.get(`spaces/${this.spaceId}/stories`, {
+        per_page: 100,
+        is_folder: 1
       });
       
-      folderData = {
+      const exactMatch = broadResponse.data.stories.find(story => 
+        story.full_slug === fullSlug && story.is_folder
+      );
+      
+      if (exactMatch) {
+        Logger.success(`Found campaign: ${campaignName}`);
+        return exactMatch;
+      }
+
+      // Create the campaign folder if it truly doesn't exist
+      console.log(`📁 Campaign folder not found, creating: ${campaignName}`);
+      const folderData = {
         story: {
           name: campaignName,
           slug: campaignSlug,
-          parent_id: parentId,
+          parent_id: await this.getFundraisersParentId(),
           is_folder: true,
           content: {
-            component: 'page'
+            component: 'folder'
           }
         }
       };
-      
-      console.log(`📁 Final attempt with data:`, JSON.stringify(folderData, null, 2));
-      const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
-      console.log(`✅ Created campaign folder (final attempt): ${campaignName}`);
-      return response.data.story;
+
+      const createResponse = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
+      Logger.success(`Created campaign: ${campaignName}`);
+      return createResponse.data.story;
 
     } catch (error) {
-      console.error(`❌ Error creating campaign folder for ${campaignName}:`, {
-        message: error.message,
-        status: error.status || error.response?.status,
-        response: error.response?.data || 'No response data'
-      });
+      Logger.error(`Error handling campaign folder for ${campaignName}`, error);
       throw error;
     }
   }
@@ -311,18 +120,44 @@ class StoryblokService {
    */
   async getFundraisersParentId() {
     try {
-      // Check if fundraisers folder exists
+      // Search for all stories with the exact slug 'fundraisers'
       const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
-        starts_with: 'fundraisers',
-        is_folder: 1
+        with_slug: 'fundraisers',
+        story_only: 1
       });
 
+      // Look for the folder with exact slug 'fundraisers'
       if (response.data.stories.length > 0) {
-        console.log('✅ Found existing fundraisers folder with ID:', response.data.stories[0].id);
-        return response.data.stories[0].id;
+        const fundraisersFolder = response.data.stories.find(story => 
+          story.slug === 'fundraisers' && story.is_folder
+        );
+        
+        if (fundraisersFolder) {
+          console.log('✅ Found existing fundraisers folder with ID:', fundraisersFolder.id);
+          return fundraisersFolder.id;
+        }
       }
 
-      // Create fundraisers folder if it doesn't exist
+      // If not found with exact slug, try broader search but filter more carefully
+      const broadResponse = await this.client.get(`spaces/${this.spaceId}/stories`, {
+        per_page: 100,
+        is_folder: 1
+      });
+      
+      // Find the root fundraisers folder (should have no parent in fundraisers path)
+      const exactMatch = broadResponse.data.stories.find(story => 
+        story.slug === 'fundraisers' && 
+        story.is_folder &&
+        story.full_slug === 'fundraisers' // This ensures it's the root folder, not a subfolder
+      );
+      
+      if (exactMatch) {
+        console.log('✅ Found existing fundraisers folder via broad search with ID:', exactMatch.id);
+        return exactMatch.id;
+      }
+
+      // Only create if truly doesn't exist
+      console.log('📁 Fundraisers folder not found, creating new one...');
       const folderData = {
         story: {
           name: 'Fundraisers',
@@ -400,116 +235,45 @@ class StoryblokService {
           `spaces/${this.spaceId}/stories/${existingFundraiser.id}`,
           storyData
         );
-        console.log(`� Updated fundraiser: ${fundraiserData.name}`);
+        Logger.success(`Updated: ${fundraiserData.name}`);
       } else {
         // Create new fundraiser
         response = await this.client.post(`spaces/${this.spaceId}/stories`, storyData);
-        console.log(`✅ Created fundraiser: ${fundraiserData.name}`);
+        Logger.success(`Created: ${fundraiserData.name}`);
       }
 
-      // Publish the story if status is ACTIVE
+      // Handle publishing/unpublishing based on status
       if (shouldPublish) {
         try {
-          console.log(`🔄 Attempting to publish story ID: ${response.data.story.id}`);
+          Logger.storyblok(`Attempting to publish story ID: ${response.data.story.id}`, 'PROCESSING');
           const publishResponse = await this.client.get(`spaces/${this.spaceId}/stories/${response.data.story.id}/publish`);
-          console.log(`📢 Published fundraiser: ${fundraiserData.name} (status: ${fundraiserData.status})`);
+          Logger.success(`Published: ${fundraiserData.name}`);
         } catch (publishError) {
-          console.error(`❌ Failed to publish fundraiser ${fundraiserData.name}:`, publishError.message);
+          Logger.error(`Failed to publish fundraiser ${fundraiserData.name}`, publishError.message);
           if (publishError.response) {
-            console.error(`❌ Publish error details:`, publishError.response.data);
+            Logger.error(`Publish error details`, publishError.response.data);
+          }
+        }
+      } else if (fundraiserData.status === 'DRAFT' && existingFundraiser) {
+        // If status is DRAFT (archived) and story exists, unpublish it
+        try {
+          Logger.storyblok(`Attempting to unpublish archived fundraiser: ${response.data.story.id}`, 'PROCESSING');
+          const unpublishResponse = await this.client.get(`spaces/${this.spaceId}/stories/${response.data.story.id}/unpublish`);
+          Logger.success(`Unpublished: ${fundraiserData.name}`);
+        } catch (unpublishError) {
+          Logger.error(`Failed to unpublish fundraiser ${fundraiserData.name}`, unpublishError.message);
+          if (unpublishError.response) {
+            Logger.error(`Unpublish error details`, unpublishError.response.data);
           }
         }
       } else {
-        console.log(`📝 Saved as draft: ${fundraiserData.name} (status: ${fundraiserData.status})`);
+        Logger.info(`Saved as draft: ${fundraiserData.name}`);
       }
 
       return response.data.story;
 
     } catch (error) {
-      console.error(`❌ Error creating/updating fundraiser ${fundraiserData.name}:`, {
-        message: error.message,
-        status: error.status,
-        response: error.response?.data || error.response,
-        requestData: error.config?.data ? JSON.parse(error.config.data) : undefined
-      });
-      throw error;
-    }
-  }
-
-  /**
-   * Create or update fundraiser directly under fundraisers folder (no campaign subfolders)
-   */
-  async createOrUpdateFundraiserDirect(fundraiserData, parentId, slug) {
-    try {
-      console.log(`🔍 Looking for existing fundraiser with slug: fundraisers/${slug}`);
-      
-      // Check if fundraiser already exists
-      const existingResponse = await this.client.get(`spaces/${this.spaceId}/stories`, {
-        with_slug: `fundraisers/${slug}`,
-        story_only: 1
-      });
-
-      if (existingResponse.data.stories.length > 0) {
-        // Update existing fundraiser
-        const existingStory = existingResponse.data.stories[0];
-        console.log(`📝 Updating existing fundraiser: ${existingStory.name} (ID: ${existingStory.id})`);
-        
-        const updateData = {
-          story: {
-            name: fundraiserData.name,
-            content: {
-              component: 'fundraiser',
-              fundraiser_name: fundraiserData.name,
-              campaign_name: fundraiserData.campaign,
-              description: fundraiserData.description || '',
-              target_amount: fundraiserData.targetAmount,
-              raised_amount: fundraiserData.raisedAmount,
-              profile_url: fundraiserData.profileUrl || '',
-              raisely_id: fundraiserData.raiselyId,
-              status: fundraiserData.status
-            }
-          }
-        };
-
-        const response = await this.client.put(`spaces/${this.spaceId}/stories/${existingStory.id}`, updateData);
-        console.log(`✅ Updated fundraiser: ${fundraiserData.name}`);
-        return response.data.story;
-        
-      } else {
-        // Create new fundraiser
-        console.log(`📝 Creating new fundraiser: ${fundraiserData.name}`);
-        
-        const createData = {
-          story: {
-            name: fundraiserData.name,
-            slug: slug,
-            parent_id: parentId,
-            content: {
-              component: 'fundraiser',
-              fundraiser_name: fundraiserData.name,
-              campaign_name: fundraiserData.campaign,
-              description: fundraiserData.description || '',
-              target_amount: fundraiserData.targetAmount,
-              raised_amount: fundraiserData.raisedAmount,
-              profile_url: fundraiserData.profileUrl || '',
-              raisely_id: fundraiserData.raiselyId,
-              status: fundraiserData.status
-            }
-          }
-        };
-
-        console.log(`📁 Creating fundraiser with data:`, JSON.stringify(createData, null, 2));
-        const response = await this.client.post(`spaces/${this.spaceId}/stories`, createData);
-        console.log(`✅ Created fundraiser: ${fundraiserData.name}`);
-        return response.data.story;
-      }
-
-    } catch (error) {
-      console.error(`❌ Error creating/updating fundraiser ${fundraiserData.name}:`, {
-        message: error.message,
-        status: error.status || error.response?.status,
-        response: error.response?.data || 'No response data'
-      });
+      Logger.error(`Error creating/updating fundraiser ${fundraiserData.name}`, error);
       throw error;
     }
   }
@@ -517,13 +281,13 @@ class StoryblokService {
   /**
    * Sync fundraiser data from Raisely webhook to Storyblok
    */
-  async syncFundraiser(raiselyData) {
+  async syncFundraiser(raiselyData, eventType = 'profile.updated') {
     try {
-      console.log(`🔄 Syncing fundraiser: ${raiselyData.name} from campaign: ${raiselyData.campaign}`);
+      Logger.section('Syncing Fundraiser');
+      Logger.storyblok(`${raiselyData.name} (${raiselyData.campaign})`);
 
-      // Get fundraisers parent folder directly (avoiding campaign subfolders)
-      const fundraisersParentId = await this.getFundraisersParentId();
-      console.log(`📁 Using fundraisers folder directly (ID: ${fundraisersParentId})`);
+      // Get or create campaign folder
+      const campaignFolder = await this.getOrCreateCampaignFolder(raiselyData.campaign);
 
       // Prepare fundraiser data
       const fundraiserData = {
@@ -537,18 +301,32 @@ class StoryblokService {
         status: raiselyData.status
       };
 
-      // Create unique slug including campaign name to organize by campaign
-      const uniqueSlug = this.createSlug(`${fundraiserData.campaign}-${fundraiserData.name}`);
-      console.log(`📝 Using unique slug: ${uniqueSlug}`);
+      // For profile.created events, check if fundraiser already exists
+      if (eventType === 'profile.created') {
+        const fundraiserSlug = this.createSlug(fundraiserData.name);
+        const fullSlug = `fundraisers/${campaignFolder.slug}/${fundraiserSlug}`;
+        
+        Logger.storyblok(`Checking if fundraiser already exists: ${fullSlug}`, 'SEARCH');
+        
+        const existingResponse = await this.client.get(`spaces/${this.spaceId}/stories`, {
+          with_slug: fullSlug,
+          story_only: 1
+        });
 
-      // Create or update fundraiser directly under fundraisers folder
-      const fundraiser = await this.createOrUpdateFundraiserDirect(fundraiserData, fundraisersParentId, uniqueSlug);
+        if (existingResponse.data.stories.length > 0) {
+          Logger.warning(`Fundraiser already exists, skipping creation: ${fundraiserData.name}`);
+          return existingResponse.data.stories[0];
+        }
+      }
 
-      console.log(`🎉 Successfully synced fundraiser: ${fundraiserData.name} (${fundraiserData.campaign})`);
+      // Create or update fundraiser
+      const fundraiser = await this.createOrUpdateFundraiser(fundraiserData, campaignFolder);
+
+      Logger.success(`Sync complete: ${fundraiserData.name}`);
       return fundraiser;
 
     } catch (error) {
-      console.error('❌ Error syncing fundraiser:', error);
+      Logger.error('Error syncing fundraiser', error);
       throw error;
     }
   }
