@@ -52,10 +52,11 @@ class StoryblokService {
    * Get or create a campaign folder in Storyblok
    */
   async getOrCreateCampaignFolder(campaignName) {
-    try {
-      const campaignSlug = this.createSlug(campaignName);
-      const fullSlug = `fundraisers/${campaignSlug}`;
+    const campaignSlug = this.createSlug(campaignName);
+    const fullSlug = `fundraisers/${campaignSlug}`;
+    let folderData = null;
 
+    try {
       // Try to find existing folder
       try {
         const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
@@ -74,7 +75,7 @@ class StoryblokService {
 
       // Create the campaign folder
       const parentId = await this.getFundraisersParentId();
-      const folderData = {
+      folderData = {
         story: {
           name: campaignName,
           slug: campaignSlug,
