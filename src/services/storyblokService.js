@@ -2,6 +2,14 @@ const StoryblokClient = require('storyblok-js-client');
 
 class StoryblokService {
   constructor() {
+    // Debug environment variables
+    console.log('🔧 StoryblokService environment check:', {
+      hasAccessToken: !!process.env.STORYBLOK_ACCESS_TOKEN,
+      hasSpaceId: !!process.env.STORYBLOK_SPACE_ID,
+      spaceId: process.env.STORYBLOK_SPACE_ID,
+      tokenLength: process.env.STORYBLOK_ACCESS_TOKEN?.length
+    });
+    
     this.client = new StoryblokClient({
       oauthToken: process.env.STORYBLOK_ACCESS_TOKEN,
     });
@@ -101,7 +109,10 @@ class StoryblokService {
       return response.data.story;
 
     } catch (error) {
+      console.error(`❌ Full error object:`, error);
       console.error(`❌ Error object keys:`, Object.keys(error));
+      console.error(`❌ Error.response type:`, typeof error.response);
+      console.error(`❌ Error.response value:`, error.response);
       console.error(`❌ Error has response:`, !!error.response);
       
       // Log the raw response if available
@@ -114,6 +125,11 @@ class StoryblokService {
         });
       } else {
         console.error(`❌ No response object available`);
+      }
+      
+      // Check if this is a network/timeout issue
+      if (error.code) {
+        console.error(`❌ Error code:`, error.code);
       }
       
       console.error(`❌ Error handling campaign folder for ${campaignName}:`, {
