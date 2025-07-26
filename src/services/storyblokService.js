@@ -90,7 +90,12 @@ class StoryblokService {
       return response.data.story;
 
     } catch (error) {
-      console.error(`❌ Error handling campaign folder for ${campaignName}:`, error);
+      console.error(`❌ Error handling campaign folder for ${campaignName}:`, {
+        message: error.message,
+        status: error.status,
+        response: error.response?.data || error.response,
+        requestData: error.config?.data ? JSON.parse(error.config.data) : undefined
+      });
       throw error;
     }
   }
@@ -215,7 +220,12 @@ class StoryblokService {
       return response.data.story;
 
     } catch (error) {
-      console.error(`❌ Error creating/updating fundraiser ${fundraiserData.name}:`, error);
+      console.error(`❌ Error creating/updating fundraiser ${fundraiserData.name}:`, {
+        message: error.message,
+        status: error.status,
+        response: error.response?.data || error.response,
+        requestData: error.config?.data ? JSON.parse(error.config.data) : undefined
+      });
       throw error;
     }
   }
