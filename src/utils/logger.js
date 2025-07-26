@@ -11,40 +11,42 @@ class Logger {
   }
 
   static success(message) {
-    console.log(`${chalk.gray(this.getTimestamp())} ${chalk.green('✓')} ${message}`);
+    console.log(`${chalk.green('✓')} ${chalk.green(message)}`);
   }
 
   static info(message) {
-    console.log(`${chalk.gray(this.getTimestamp())} ${chalk.blue('•')} ${message}`);
+    console.log(`  ${chalk.dim(message)}`);
+  }
+
+  static step(message) {
+    console.log(`  → ${message}`);
   }
 
   static warning(message) {
-    console.log(`${chalk.gray(this.getTimestamp())} ${chalk.yellow('⚠')} ${message}`);
+    console.log(`${chalk.yellow('⚠')} ${chalk.yellow(message)}`);
   }
 
   static error(message, error = null) {
-    console.log(`${chalk.gray(this.getTimestamp())} ${chalk.red('✗')} ${message}`);
+    console.log(`${chalk.red('✗')} ${chalk.red(message)}`);
     if (error && process.env.NODE_ENV === 'development') {
-      console.log(chalk.red(`   ${error.message || error}`));
+      console.log(`     ${chalk.red(error.message || error)}`);
     }
   }
 
   static webhook(message, eventType = null) {
-    const event = eventType ? chalk.dim(`[${eventType}] `) : '';
-    console.log(`${chalk.gray(this.getTimestamp())} ${chalk.green('📨')} ${event}${message}`);
+    console.log(`${chalk.blue('📨')} ${message}`);
   }
 
-  static storyblok(message, operation = null) {
-    const op = operation ? chalk.dim(`[${operation}] `) : '';
-    console.log(`${chalk.gray(this.getTimestamp())} ${chalk.blue('🔹')} ${op}${message}`);
+  static result(message) {
+    console.log(`${chalk.green('✓')} ${message}`);
   }
 
   static server(message) {
-    console.log(`${chalk.gray(this.getTimestamp())} ${chalk.cyan('🚀')} ${message}`);
+    console.log(`🚀 ${message}`);
   }
 
   static test(message) {
-    console.log(`${chalk.gray(this.getTimestamp())} ${chalk.magenta('🧪')} ${message}`);
+    console.log(`🧪 ${message}`);
   }
 
   static space() {
@@ -53,7 +55,7 @@ class Logger {
 
   static section(title) {
     console.log('');
-    console.log(chalk.dim(`─── ${title} ───`));
+    console.log(chalk.bold.blue(`━━━ ${title} ━━━`));
   }
 }
 

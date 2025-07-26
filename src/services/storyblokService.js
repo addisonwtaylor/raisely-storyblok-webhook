@@ -29,7 +29,7 @@ class StoryblokService {
       const campaignSlug = this.createSlug(campaignName);
       const fullSlug = `events/${campaignSlug}`;
       
-      Logger.storyblok(`Looking for event story: ${fullSlug}`, 'SEARCH');
+      Logger.step(`Looking for event: ${campaignName}`);
       
       const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
         with_slug: fullSlug,
@@ -37,14 +37,14 @@ class StoryblokService {
       });
 
       if (response.data.stories.length > 0) {
-        Logger.success(`Found event story: ${campaignName} (ID: ${response.data.stories[0].id})`);
+        Logger.success(`Found: ${campaignName}`);
         return response.data.stories[0];
       } else {
-        Logger.warning(`Event story not found: ${campaignName} (${fullSlug})`);
+        Logger.warning(`Event not found: ${campaignName}`);
         return null;
       }
     } catch (error) {
-      Logger.error(`Error finding event story ${campaignName}`, error);
+      Logger.error(`Event lookup failed: ${campaignName}`);
       return null;
     }
   }
@@ -57,7 +57,7 @@ class StoryblokService {
       const campaignSlug = this.createSlug(campaignName);
       const fullSlug = `fundraisers/${campaignSlug}`;
 
-      Logger.storyblok(`Looking for campaign: ${campaignName}`, 'SEARCH');
+      Logger.step(`Looking for campaign: ${campaignName}`);
 
       // Try to find existing folder with exact slug match
       const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
@@ -71,7 +71,7 @@ class StoryblokService {
         );
         
         if (existingFolder) {
-          Logger.success(`Found campaign: ${campaignName}`);
+          Logger.success(`Found: ${campaignName}`);
           return existingFolder;
         }
       }
@@ -87,7 +87,7 @@ class StoryblokService {
       );
       
       if (exactMatch) {
-        Logger.success(`Found campaign: ${campaignName}`);
+        Logger.success(`Found: ${campaignName}`);
         return exactMatch;
       }
 
@@ -187,6 +187,8 @@ class StoryblokService {
       // Use the path directly from Raisely data instead of slugifying the name
       const fundraiserSlug = fundraiserData.path;
       const fullSlug = `fundraisers/${campaignFolder.slug}/${fundraiserSlug}`;
+      
+
 
       // Check if fundraiser already exists
       let existingFundraiser = null;
@@ -203,7 +205,7 @@ class StoryblokService {
         // Fundraiser doesn't exist
       }
 
-      // Find the event story to reference
+      // Find the event story to reference (quietly)
       const eventStory = await this.findEventStory(fundraiserData.campaign);
       
       // Only publish if Raisely status is ACTIVE
@@ -229,6 +231,9 @@ class StoryblokService {
         }
       };
 
+      const action = existingFundraiser ? 'Updating' : 'Creating';
+      Logger.step(`${action}: ${storyData.story.name}`);
+
       let response;
       if (existingFundraiser) {
         // Update existing fundraiser
@@ -236,19 +241,19 @@ class StoryblokService {
           `spaces/${this.spaceId}/stories/${existingFundraiser.id}`,
           storyData
         );
-        Logger.success(`Updated: ${fundraiserData.name}`);
       } else {
         // Create new fundraiser
         response = await this.client.post(`spaces/${this.spaceId}/stories`, storyData);
-        Logger.success(`Created: ${fundraiserData.name}`);
       }
+
+      const story = response.data.story;
 
       // Handle publishing/unpublishing based on status
       if (shouldPublish) {
         try {
-          Logger.storyblok(`Attempting to publish story ID: ${response.data.story.id}`, 'PROCESSING');
+          Logger.step('Publishing...');
           const publishResponse = await this.client.get(`spaces/${this.spaceId}/stories/${response.data.story.id}/publish`);
-          Logger.success(`Published: ${fundraiserData.name}`);
+          Logger.info('Published');
         } catch (publishError) {
           Logger.error(`Failed to publish fundraiser ${fundraiserData.name}`, publishError.message);
           if (publishError.response) {
@@ -258,7 +263,7 @@ class StoryblokService {
       } else if (fundraiserData.status === 'DRAFT' && existingFundraiser) {
         // If status is DRAFT (archived) and story exists, unpublish it
         try {
-          Logger.storyblok(`Attempting to unpublish archived fundraiser: ${response.data.story.id}`, 'PROCESSING');
+          Logger.step(`Unpublishing archived fundraiser: ${fundraiserData.name}`);
           const unpublishResponse = await this.client.get(`spaces/${this.spaceId}/stories/${response.data.story.id}/unpublish`);
           Logger.success(`Unpublished: ${fundraiserData.name}`);
         } catch (unpublishError) {
@@ -281,33 +286,25 @@ class StoryblokService {
 
   /**
    * Sync fundraiser data from Raisely webhook to Storyblok
+   * @param {FundraiserData} raiselyData - The fundraiser data
+   * @param {string} eventType - The webhook event type
    */
   async syncFundraiser(raiselyData, eventType = 'profile.updated') {
     try {
-      Logger.section('Syncing Fundraiser');
-      Logger.storyblok(`${raiselyData.name} (${raiselyData.campaign})`);
+      Logger.section(`Syncing to Storyblok`);
 
       // Get or create campaign folder
       const campaignFolder = await this.getOrCreateCampaignFolder(raiselyData.campaign);
 
-      // Prepare fundraiser data
-      const fundraiserData = {
-        name: raiselyData.name,
-        campaign: raiselyData.campaign,
-        description: raiselyData.description,
-        targetAmount: raiselyData.targetAmount,
-        raisedAmount: raiselyData.raisedAmount,
-        profileUrl: raiselyData.profileUrl,
-        raiselyId: raiselyData.uuid || raiselyData.id,
-        status: raiselyData.status
-      };
+      // Use the original extracted data directly instead of reconstructing
+      const fundraiserData = raiselyData;
 
       // For profile.created events, check if fundraiser already exists
       if (eventType === 'profile.created') {
         const fundraiserSlug = fundraiserData.path;
         const fullSlug = `fundraisers/${campaignFolder.slug}/${fundraiserSlug}`;
         
-        Logger.storyblok(`Checking if fundraiser already exists: ${fullSlug}`, 'SEARCH');
+        Logger.step(`Looking for fundraiser: ${fundraiserData.name}`);
         
         const existingResponse = await this.client.get(`spaces/${this.spaceId}/stories`, {
           with_slug: fullSlug,
@@ -315,15 +312,18 @@ class StoryblokService {
         });
 
         if (existingResponse.data.stories.length > 0) {
-          Logger.warning(`Fundraiser already exists, skipping creation: ${fundraiserData.name}`);
+          Logger.success(`Found: ${fundraiserData.name}`);
+          Logger.warning(`Fundraiser already exists, skipping creation`);
           return existingResponse.data.stories[0];
+        } else {
+          Logger.warning(`Fundraiser not found: ${fundraiserData.name}`);
         }
       }
 
       // Create or update fundraiser
       const fundraiser = await this.createOrUpdateFundraiser(fundraiserData, campaignFolder);
 
-      Logger.success(`Sync complete: ${fundraiserData.name}`);
+
       return fundraiser;
 
     } catch (error) {

@@ -1,5 +1,6 @@
 const storyblokService = require('../services/storyblokService');
 const Logger = require('../utils/logger');
+const { validateFundraiserData } = require('../types/fundraiser');
 const fs = require('fs');
 const path = require('path');
 
@@ -17,7 +18,7 @@ class WebhookController {
       // Extract event type from the correct location
       const eventType = webhookData.data.type || webhookData.type || 'unknown';
       
-      Logger.webhook('Processing', eventType);
+      Logger.webhook(`${eventType} → ${req.body.data?.data?.name || 'Processing'}`);
 
       // Validate webhook data structure
       if (!webhookData.data) {
@@ -47,14 +48,20 @@ class WebhookController {
         });
       }
 
+      // Additional validation to catch missing fields early
+      const validatedData = validateFundraiserData(extractedData);
+      if (!validatedData) {
+        Logger.error('Fundraiser data failed validation');
+        return res.status(400).json({ 
+          error: 'Invalid fundraiser data', 
+          message: 'Data validation failed' 
+        });
+      }
+
       // Sync to Storyblok, passing the event type
       await storyblokService.syncFundraiser(extractedData, eventType);
 
-      Logger.success(`Webhook processed successfully`, {
-        fundraiser: extractedData.name,
-        campaign: extractedData.campaign,
-        event: eventType
-      });
+      Logger.result(`Complete: ${extractedData.name}`);
 
       // Return success response
       res.status(200).json({ 
@@ -136,13 +143,7 @@ class WebhookController {
         status: profile.status || 'DRAFT' // Default to DRAFT if no status
       };
 
-      Logger.info('Extracted fundraiser data', {
-        name: extractedData.name,
-        campaign: extractedData.campaign,
-        targetAmount: extractedData.targetAmount,
-        raisedAmount: extractedData.raisedAmount,
-        status: extractedData.status
-      });
+
 
       return extractedData;
 
