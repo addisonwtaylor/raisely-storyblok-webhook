@@ -437,14 +437,93 @@ class StoryblokService {
   }
 
   /**
+   * Create or update fundraiser directly under fundraisers folder (no campaign subfolders)
+   */
+  async createOrUpdateFundraiserDirect(fundraiserData, parentId, slug) {
+    try {
+      console.log(`🔍 Looking for existing fundraiser with slug: fundraisers/${slug}`);
+      
+      // Check if fundraiser already exists
+      const existingResponse = await this.client.get(`spaces/${this.spaceId}/stories`, {
+        with_slug: `fundraisers/${slug}`,
+        story_only: 1
+      });
+
+      if (existingResponse.data.stories.length > 0) {
+        // Update existing fundraiser
+        const existingStory = existingResponse.data.stories[0];
+        console.log(`📝 Updating existing fundraiser: ${existingStory.name} (ID: ${existingStory.id})`);
+        
+        const updateData = {
+          story: {
+            name: fundraiserData.name,
+            content: {
+              component: 'fundraiser',
+              fundraiser_name: fundraiserData.name,
+              campaign_name: fundraiserData.campaign,
+              description: fundraiserData.description || '',
+              target_amount: fundraiserData.targetAmount,
+              raised_amount: fundraiserData.raisedAmount,
+              profile_url: fundraiserData.profileUrl || '',
+              raisely_id: fundraiserData.raiselyId,
+              status: fundraiserData.status
+            }
+          }
+        };
+
+        const response = await this.client.put(`spaces/${this.spaceId}/stories/${existingStory.id}`, updateData);
+        console.log(`✅ Updated fundraiser: ${fundraiserData.name}`);
+        return response.data.story;
+        
+      } else {
+        // Create new fundraiser
+        console.log(`📝 Creating new fundraiser: ${fundraiserData.name}`);
+        
+        const createData = {
+          story: {
+            name: fundraiserData.name,
+            slug: slug,
+            parent_id: parentId,
+            content: {
+              component: 'fundraiser',
+              fundraiser_name: fundraiserData.name,
+              campaign_name: fundraiserData.campaign,
+              description: fundraiserData.description || '',
+              target_amount: fundraiserData.targetAmount,
+              raised_amount: fundraiserData.raisedAmount,
+              profile_url: fundraiserData.profileUrl || '',
+              raisely_id: fundraiserData.raiselyId,
+              status: fundraiserData.status
+            }
+          }
+        };
+
+        console.log(`📁 Creating fundraiser with data:`, JSON.stringify(createData, null, 2));
+        const response = await this.client.post(`spaces/${this.spaceId}/stories`, createData);
+        console.log(`✅ Created fundraiser: ${fundraiserData.name}`);
+        return response.data.story;
+      }
+
+    } catch (error) {
+      console.error(`❌ Error creating/updating fundraiser ${fundraiserData.name}:`, {
+        message: error.message,
+        status: error.status || error.response?.status,
+        response: error.response?.data || 'No response data'
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Sync fundraiser data from Raisely webhook to Storyblok
    */
   async syncFundraiser(raiselyData) {
     try {
       console.log(`🔄 Syncing fundraiser: ${raiselyData.name} from campaign: ${raiselyData.campaign}`);
 
-      // Get or create campaign folder
-      const campaignFolder = await this.getOrCreateCampaignFolder(raiselyData.campaign);
+      // Get fundraisers parent folder directly (avoiding campaign subfolders)
+      const fundraisersParentId = await this.getFundraisersParentId();
+      console.log(`📁 Using fundraisers folder directly (ID: ${fundraisersParentId})`);
 
       // Prepare fundraiser data
       const fundraiserData = {
@@ -458,10 +537,14 @@ class StoryblokService {
         status: raiselyData.status
       };
 
-      // Create or update fundraiser
-      const fundraiser = await this.createOrUpdateFundraiser(fundraiserData, campaignFolder);
+      // Create unique slug including campaign name to organize by campaign
+      const uniqueSlug = this.createSlug(`${fundraiserData.campaign}-${fundraiserData.name}`);
+      console.log(`📝 Using unique slug: ${uniqueSlug}`);
 
-      console.log(`🎉 Successfully synced fundraiser: ${fundraiserData.name}`);
+      // Create or update fundraiser directly under fundraisers folder
+      const fundraiser = await this.createOrUpdateFundraiserDirect(fundraiserData, fundraisersParentId, uniqueSlug);
+
+      console.log(`🎉 Successfully synced fundraiser: ${fundraiserData.name} (${fundraiserData.campaign})`);
       return fundraiser;
 
     } catch (error) {
