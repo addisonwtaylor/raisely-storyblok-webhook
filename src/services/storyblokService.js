@@ -85,10 +85,7 @@ class StoryblokService {
           name: campaignName,
           slug: campaignSlug,
           parent_id: parentId,
-          is_folder: true,
-          content: {
-            component: 'page'
-          }
+          is_folder: true
         }
       };
       
@@ -104,10 +101,20 @@ class StoryblokService {
       return response.data.story;
 
     } catch (error) {
+      // Log the raw response if available
+      if (error.response) {
+        console.error(`❌ Raw Storyblok response:`, {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+      }
+      
       console.error(`❌ Error handling campaign folder for ${campaignName}:`, {
         message: error.message,
         status: error.status || error.response?.status,
-        response: error.response?.data || error.response,
+        response: error.response?.data,
         requestData: folderData,
         fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
       });
