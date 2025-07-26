@@ -67,27 +67,64 @@ class StoryblokService {
     try {
       // Try to find existing folder
       console.log(`🔍 Looking for existing campaign folder with slug: ${fullSlug}`);
+      
+      // Get parent ID first
+      const parentId = await this.getFundraisersParentId();
+      console.log(`🔍 Parent fundraisers folder ID: ${parentId}`);
+      
+      // List all folders under fundraisers to see what exists
+      try {
+        const allFolders = await this.client.get(`spaces/${this.spaceId}/stories`, {
+          starts_with: parentId,
+          is_folder: true
+        });
+        
+        console.log(`🔍 All folders under fundraisers:`, {
+          found: allFolders.data.stories.length,
+          folders: allFolders.data.stories.map(s => ({ 
+            id: s.id, 
+            name: s.name, 
+            slug: s.slug, 
+            full_slug: s.full_slug 
+          }))
+        });
+        
+        // Look for existing folder by name or slug
+        const existingFolder = allFolders.data.stories.find(s => 
+          s.name === campaignName || 
+          s.slug === campaignSlug ||
+          s.full_slug === fullSlug
+        );
+        
+        if (existingFolder) {
+          console.log(`📁 Found existing campaign folder: ${campaignName}`, existingFolder);
+          return existingFolder;
+        }
+      } catch (error) {
+        console.log(`🔍 Failed to list folders:`, error.message);
+      }
+      
+      // Also try the original search method
       try {
         const response = await this.client.get(`spaces/${this.spaceId}/stories`, {
           with_slug: fullSlug,
           story_only: 1
         });
 
-        console.log(`🔍 Search response:`, {
+        console.log(`🔍 Direct slug search response:`, {
           found: response.data.stories.length,
-          stories: response.data.stories.map(s => ({ id: s.id, name: s.name, slug: s.slug }))
+          stories: response.data.stories.map(s => ({ id: s.id, name: s.name, slug: s.slug, full_slug: s.full_slug }))
         });
 
         if (response.data.stories.length > 0) {
-          console.log(`📁 Found existing campaign folder: ${campaignName}`);
+          console.log(`📁 Found existing campaign folder via slug search: ${campaignName}`);
           return response.data.stories[0];
         }
       } catch (error) {
-        console.log(`� Search failed, will create new folder:`, error.message);
+        console.log(`🔍 Direct slug search failed:`, error.message);
       }
 
       // Create the campaign folder
-      const parentId = await this.getFundraisersParentId();
       folderData = {
         story: {
           name: campaignName,
