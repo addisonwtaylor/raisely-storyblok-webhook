@@ -73,17 +73,22 @@ class StoryblokService {
       }
 
       // Create the campaign folder
+      const parentId = await this.getFundraisersParentId();
       const folderData = {
         story: {
           name: campaignName,
           slug: campaignSlug,
-          parent_id: await this.getFundraisersParentId(),
-          is_folder: true,
-          content: {
-            component: 'folder'
-          }
+          parent_id: parentId,
+          is_folder: true
         }
       };
+
+      console.log(`📁 Creating campaign folder with data:`, {
+        name: campaignName,
+        slug: campaignSlug,
+        parent_id: parentId,
+        folderData: JSON.stringify(folderData, null, 2)
+      });
 
       const response = await this.client.post(`spaces/${this.spaceId}/stories`, folderData);
       console.log(`✅ Created campaign folder: ${campaignName}`);
@@ -92,9 +97,10 @@ class StoryblokService {
     } catch (error) {
       console.error(`❌ Error handling campaign folder for ${campaignName}:`, {
         message: error.message,
-        status: error.status,
+        status: error.status || error.response?.status,
         response: error.response?.data || error.response,
-        requestData: error.config?.data ? JSON.parse(error.config.data) : undefined
+        requestData: folderData,
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
       });
       throw error;
     }
