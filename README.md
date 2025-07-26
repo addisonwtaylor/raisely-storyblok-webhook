@@ -184,32 +184,6 @@ The service uses color-coded, structured logging with timestamps:
 19:26:46 ✓ Sync complete: Addison Taylor
 ```
 
-## Deployment
-
-### Deploy to Vercel
-
-1. **Install Vercel CLI:**
-   ```bash
-   npm i -g vercel
-   ```
-
-2. **Deploy:**
-   ```bash
-   vercel --prod
-   ```
-
-3. **Set environment variables:**
-   ```bash
-   vercel env add STORYBLOK_MANAGEMENT_TOKEN
-   vercel env add STORYBLOK_SPACE_ID
-   ```
-
-4. **Configure Raisely webhook:**
-   - Use your Vercel URL: `https://your-project.vercel.app/webhook/raisely`
-   - Select events: `profile.created`, `profile.updated`
-
-📖 **See [DEPLOY.md](./DEPLOY.md) for detailed deployment instructions**
-
 ## Development
 
 ### Project Structure
