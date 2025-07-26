@@ -16,9 +16,7 @@ class WebhookController {
       // Validate webhook secret if configured
       const webhookSecret = process.env.RAISELY_WEBHOOK_SECRET;
       if (webhookSecret) {
-        const providedSecret = req.headers['x-webhook-secret'] || 
-                              req.headers['x-raisely-secret'] || 
-                              req.headers['authorization']?.replace('Bearer ', '');
+        const providedSecret = req.body.secret;
         
         if (!providedSecret) {
           Logger.error('Webhook secret required but not provided');
