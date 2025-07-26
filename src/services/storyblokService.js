@@ -184,7 +184,8 @@ class StoryblokService {
    */
   async createOrUpdateFundraiser(fundraiserData, campaignFolder) {
     try {
-      const fundraiserSlug = this.createSlug(fundraiserData.name);
+      // Use the path directly from Raisely data instead of slugifying the name
+      const fundraiserSlug = fundraiserData.path;
       const fullSlug = `fundraisers/${campaignFolder.slug}/${fundraiserSlug}`;
 
       // Check if fundraiser already exists
@@ -303,7 +304,7 @@ class StoryblokService {
 
       // For profile.created events, check if fundraiser already exists
       if (eventType === 'profile.created') {
-        const fundraiserSlug = this.createSlug(fundraiserData.name);
+        const fundraiserSlug = fundraiserData.path;
         const fullSlug = `fundraisers/${campaignFolder.slug}/${fundraiserSlug}`;
         
         Logger.storyblok(`Checking if fundraiser already exists: ${fullSlug}`, 'SEARCH');

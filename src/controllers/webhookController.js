@@ -87,6 +87,11 @@ class WebhookController {
         return null;
       }
 
+      if (!profile.path) {
+        Logger.warning('Missing required field: path (used for slug)');
+        return null;
+      }
+
       // Extract campaign information from Raisely webhook
       let campaignName = 'Default Campaign';
       
