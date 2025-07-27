@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:webhook": "node scripts/test-webhook.js",
+    "test:verification": "node scripts/test-verification.js",
     "bulk-import": "node scripts/bulk-import.js",
     "bulk-import:dry": "node scripts/bulk-import.js --dry-run"
   },

@@ -28,6 +28,15 @@ app.get('/health', (req, res) => {
 // Webhook endpoint for Raisely
 app.post('/webhook/raisely', webhookController.handleRaiselyWebhook.bind(webhookController));
 
+// Handle GET requests for webhook verification (some services use GET for verification)
+app.get('/webhook/raisely', (req, res) => {
+  Logger.info('Webhook verification via GET request');
+  res.status(200).json({ 
+    success: true, 
+    message: 'Webhook endpoint verified successfully' 
+  });
+});
+
 // Test endpoints for development
 if (process.env.NODE_ENV === 'development') {
   app.post('/test/webhook', webhookController.testWebhook.bind(webhookController));

@@ -129,12 +129,27 @@ npm start
 
 The webhook endpoint will be available at: `http://localhost:3000/webhook/raisely`
 
+#### Webhook Verification
+
+The webhook endpoint supports verification requests commonly used by webhook services:
+
+- **GET requests**: Returns 200 OK for endpoint verification
+- **POST requests with empty/minimal data**: Automatically detected as verification requests
+- **POST requests with webhook data**: Processed normally with secret validation
+
 ### Testing
 
 Test webhook functionality:
 
 ```bash
-npm run test-webhook
+# Test actual webhook processing
+npm run test:webhook
+
+# Test webhook verification (blank requests, etc.)
+npm run test:verification
+
+# Quick verification test using curl
+./test-verification.sh
 ```
 
 ## 🔧 Configuration Options

@@ -13,7 +13,17 @@ class WebhookController {
       Logger.section('Incoming Webhook');
       Logger.webhook('Received request');
       
-      // Validate webhook secret if configured
+      // Check if this is a verification request (blank or minimal content)
+      const isVerificationRequest = this.isVerificationRequest(req.body);
+      if (isVerificationRequest) {
+        Logger.info('Processing webhook verification request');
+        return res.status(200).json({ 
+          success: true, 
+          message: 'Webhook endpoint verified successfully' 
+        });
+      }
+      
+      // Validate webhook secret if configured (skip for verification requests)
       const secretValidation = this.validateWebhookSecret(req.body.secret);
       if (secretValidation.error) {
         return res.status(secretValidation.status).json(secretValidation.response);
@@ -128,6 +138,34 @@ class WebhookController {
         message: error.message 
       });
     }
+  }
+
+  /**
+   * Check if this is a verification request (blank or minimal content)
+   * Verification requests are typically sent by webhook services to verify the endpoint is working
+   */
+  isVerificationRequest(body) {
+    // Handle completely empty/undefined body
+    if (!body || typeof body !== 'object') {
+      return true;
+    }
+    
+    // Handle empty object
+    if (Object.keys(body).length === 0) {
+      return true;
+    }
+    
+    // Handle cases where body exists but has no meaningful webhook data
+    // This covers cases where the request might have minimal content but lacks the expected webhook structure
+    const hasWebhookData = body.data && (body.data.data || body.data.profile || body.data.type);
+    const hasSecret = body.secret;
+    
+    // If there's no webhook data and no secret, it's likely a verification request
+    if (!hasWebhookData && !hasSecret) {
+      return true;
+    }
+    
+    return false;
   }
 
   /**
