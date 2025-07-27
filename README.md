@@ -1,241 +1,242 @@
-# Raisely to Storyblok Webhook Service
+# Raisely to Storyblok Importer
 
-A Node.js webhook service that automatically syncs fundraiser profile data from Raisely to Storyblok, organizing them by campaign folders.
+A Node.js application that syncs fundraising profiles from Raisely to Storyblok CMS. Supports both bulk imports and real-time webhook synchronization.
 
-## Features
+## 🏗️ Architecture Overview
 
-- ✅ **Real-time sync** - Processes Raisely webhooks for profile created/updated events
-- ✅ **Smart publishing** - Auto-publishes active fundraisers, unpublishes archived ones
-- ✅ **Campaign organization** - Automatically creates and organizes campaign folders
-- ✅ **Error handling** - Comprehensive error handling with detailed logging
-- ✅ **Test endpoints** - Built-in testing with real webhook data
-- ✅ **Pretty logging** - Color-coded, timestamped logs for easy debugging
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│     Raisely     │───▶│   This System   │───▶│   Storyblok     │
+│   (Source CMS)  │    │                 │    │ (Target CMS)    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                              │
+                              ▼
+                       ┌─────────────────┐
+                       │   Local JSON    │
+                       │   Data Files    │
+                       └─────────────────┘
+```
 
-## Setup
+## ✨ Features
 
-### 1. Install Dependencies
+- ✅ **Real-time sync** - Processes Raisely webhooks instantly
+- ✅ **Bulk import** - Import hundreds of profiles efficiently  
+- ✅ **Team support** - Links individual fundraisers to teams
+- ✅ **Race condition prevention** - Safe concurrent processing
+- ✅ **Data preservation** - Never overwrites existing team members
+- ✅ **Campaign organization** - Auto-creates folder structures
+- ✅ **Flexible logging** - Concise by default, verbose when needed
+- ✅ **Comprehensive testing** - Built-in test utilities
+
+## 📁 Project Structure
+
+```
+├── src/
+│   ├── controllers/
+│   │   └── webhookController.js    # Handles incoming Raisely webhooks
+│   ├── services/
+│   │   └── storyblokService.js     # Core Storyblok API integration
+│   ├── types/
+│   │   └── fundraiser.js           # Data validation schemas
+│   └── utils/
+│       └── logger.js               # Logging utilities
+├── scripts/
+│   ├── bulk-import.js              # Bulk import from JSON files
+│   ├── sync-all-data.js           # Fetch all data from Raisely
+│   └── test-webhook.js            # Webhook testing utility
+├── sync/
+│   └── all-data.json              # Local data cache
+├── server.js                      # Express server entry point
+└── package.json
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js 16+
+- Raisely API access
+- Storyblok space with Management API token
+
+### Installation
 
 ```bash
 npm install
 ```
 
-### 2. Environment Configuration
+### Environment Setup
 
-Copy the example environment file and add your credentials:
+Create a `.env` file:
 
-```bash
-cp .env.example .env
-```
+```env
+# Storyblok Configuration
+STORYBLOK_SPACE_ID=your_space_id
+STORYBLOK_ACCESS_TOKEN=your_management_api_token
 
-Edit `.env` and add your Storyblok credentials:
+# Raisely Configuration (for data sync)
+RAISELY_API_TOKEN=your_raisely_api_token
 
-```
-STORYBLOK_MANAGEMENT_TOKEN=your_management_token_here
-STORYBLOK_SPACE_ID=your_space_id_here
-NODE_ENV=development
+# Server Configuration
 PORT=3000
+WEBHOOK_SECRET=your_webhook_secret
+
+# Logging (optional)
+VERBOSE=false
+NODE_ENV=development
 ```
 
-### 3. Storyblok Content Type Setup
+## 📋 Usage
 
-Create a content type called `fundraiser` in your Storyblok space with these fields:
-- `name` (Text)
-- `campaign` (Text)
-- `description` (Textarea)
-- `target_amount` (Number)
-- `raised_amount` (Number)
-- `profile_url` (Text)
-- `raisely_id` (Text)
-- `last_updated` (Text)
+### Bulk Import
 
-## Usage
-
-### Development
-
-Start the service in development mode:
+Import all profiles from local JSON data:
 
 ```bash
-npm run dev
+# Import everything (teams first, then individuals)
+npm run bulk-import
+
+# Import only teams
+npm run bulk-import -- --type=teams
+
+# Import only individuals
+npm run bulk-import -- --type=individuals
+
+# Dry run (preview without changes)
+npm run bulk-import -- --dry-run
+
+# Verbose logging
+npm run bulk-import -- --verbose
+
+# Import with filters
+npm run bulk-import -- --type=individuals --campaign="Campaign Name" --limit=10
 ```
 
-The service will run on `http://localhost:3000`
+### Data Synchronization
 
-### Production
+Fetch fresh data from Raisely:
 
-Start the service in production mode:
+```bash
+npm run sync-data
+```
+
+### Webhook Server
+
+For real-time synchronization:
 
 ```bash
 npm start
 ```
 
-For production deployment, set `PORT=8080` in your environment.
+The webhook endpoint will be available at: `http://localhost:3000/webhook/raisely`
 
-## Endpoints
+### Testing
 
-### Production Endpoints
+Test webhook functionality:
 
-- **`POST /webhook/raisely`** - Main webhook endpoint for Raisely
-- **`GET /health`** - Health check endpoint
-
-### Development Endpoints (NODE_ENV=development only)
-
-- **`POST /test/webhook/created`** - Test profile.created events
-- **`POST /test/webhook/updated`** - Test profile.updated events
-
-### Testing with Real Data
-
-1. Populate test files with real webhook data:
-   - `test-data/profile-created-webhook.json`
-   - `test-data/profile-updated-webhook.json`
-
-2. Run tests:
-   ```bash
-   # Test profile creation
-   curl -X POST http://localhost:3000/test/webhook/created
-   
-   # Test profile updates
-   curl -X POST http://localhost:3000/test/webhook/updated
-   ```
-
-## Webhook Configuration in Raisely
-
-1. Go to your Raisely admin dashboard
-2. Navigate to Settings > Webhooks
-3. Add a new webhook with:
-   - **URL**: `https://your-domain.com/webhook/raisely`
-   - **Events**: Profile Created, Profile Updated
-   - **Format**: JSON
-
-## How It Works
-
-### Data Flow
-
-1. **Webhook Received**: Raisely sends profile data when a fundraiser is created/updated
-2. **Data Extraction**: Service extracts key fundraiser information
-3. **Campaign Folder**: Creates or finds the campaign folder in Storyblok
-4. **Fundraiser Story**: Creates new or updates existing fundraiser story
-5. **Success Response**: Returns confirmation to Raisely
-
-### Folder Structure in Storyblok
-
-```
-/fundraisers/
-├── campaign-1-slug/
-│   ├── fundraiser-1-slug
-│   └── fundraiser-2-slug
-├── campaign-2-slug/
-│   ├── fundraiser-3-slug
-│   └── fundraiser-4-slug
-└── ...
+```bash
+npm run test-webhook
 ```
 
-### Data Mapping
+## 🔧 Configuration Options
 
-| Raisely Field | Storyblok Field | Notes |
-|---------------|-----------------|-------|
-| `name` | `name` | Fundraiser name |
-| `campaign.name` | `campaign` | Campaign name |
-| `description` | `description` | Fundraiser description |
-| `target` | `target_amount` | Target amount (normalized) |
-| `total` | `raised_amount` | Amount raised (normalized) |
-| `url/path` | `profile_url` | Profile URL |
-| `uuid/id` | `raisely_id` | Raisely unique ID |
+### Bulk Import Options
 
-## Error Handling
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dry-run, -n` | Preview mode (no changes) | false |
+| `--verbose, -v` | Detailed logging | false |
+| `--batch-size=N` | Profiles per batch | 5 |
+| `--delay=N` | Delay between batches (ms) | 1000 |
+| `--type=TYPE` | Filter: `individuals`, `teams`, or both | both |
+| `--status=STATUS` | Filter by status: `ACTIVE`, `DRAFT`, etc. | all |
+| `--campaign=NAME` | Filter by campaign name | all |
+| `--limit=N` | Process only first N profiles | unlimited |
 
-The service includes comprehensive error handling:
-- Invalid webhook payloads
-- Missing required fields
-- Storyblok API errors
-- Network timeouts
-- Authentication failures
+### Logging Levels
 
-All errors are logged with timestamps and context.
+- **Default**: Shows progress, results, warnings, and errors
+- **Verbose** (`--verbose` or `VERBOSE=true`): Shows detailed step-by-step information
 
-## Enhanced Logging
+## 🏗️ Storyblok Structure
 
-The service uses color-coded, structured logging with timestamps:
-
-- 🟢 **SUCCESS** - Operations completed successfully
-- 🔵 **INFO** - General information  
-- 🟡 **WARNING** - Non-critical issues
-- 🔴 **ERROR** - Errors with stack traces
-- 🟣 **TEST** - Test-related messages
-- 🔵 **STORYBLOK** - Storyblok API operations
-- 🟢 **WEBHOOK** - Webhook processing
-
-### Example Log Output
+The system creates this structure in Storyblok:
 
 ```
-─── Webhook Service ───
-19:26:26 🚀 Running on port 3000
-19:26:26 • Health: http://localhost:3000/health
-
-─── Incoming Webhook ───
-19:26:45 📨 Received request
-19:26:45 📨 [profile.updated] Processing
-
-─── Syncing Fundraiser ───
-19:26:45 🔹 Addison Taylor (Sunderland City Runs)
-19:26:45 � [SEARCH] Looking for campaign: Sunderland City Runs
-19:26:46 ✓ Found campaign: Sunderland City Runs
-19:26:46 ✓ Updated: Addison Taylor
-19:26:46 ✓ Unpublished: Addison Taylor
-19:26:46 ✓ Sync complete: Addison Taylor
+📁 fundraisers/
+├── 📁 campaign-1/
+│   ├── 📄 campaign-1 (campaign story)
+│   ├── 📄 event-campaign-1 (event story)
+│   ├── 📁 team/
+│   │   ├── 📄 team-alpha (team story)
+│   │   └── 📄 team-beta (team story)
+│   ├── 📄 individual-1 (individual story)
+│   └── 📄 individual-2 (individual story)
 ```
 
-## Development
+All stories use the `fundraiser` component with fields like `name`, `description`, `target_amount`, `raised_amount`, `campaign` (UUID reference), and `team` (array of member UUIDs for teams).
 
-### Project Structure
+## 🔄 Key Features
 
-```
-src/
-├── controllers/
-│   └── webhookController.js    # Webhook request handling
-├── services/
-│   └── storyblokService.js     # Storyblok API integration
-├── utils/
-│   └── logger.js               # Logging utilities
-└── server.js                   # Express server setup
-```
+### Race Condition Prevention
+- **Sequential team processing**: Team members added one at a time
+- **Fresh data fetching**: Always gets latest team state before updates
+- **Data preservation**: Never overwrites existing team members
 
-### Adding New Features
+### Team Support
+- Teams are processed before individuals
+- Individuals are automatically linked to their teams
+- Team membership is preserved during updates
 
-1. **New webhook events**: Extend `webhookController.js`
-2. **Additional fields**: Update data extraction in `extractFundraiserData()`
-3. **New Storyblok operations**: Add methods to `storyblokService.js`
+## 🚨 Troubleshooting
 
-## Deployment
+### Quick Fixes
 
-### Environment Variables for Production
-
-```
-STORYBLOK_ACCESS_TOKEN=your_production_token
-STORYBLOK_SPACE_ID=your_production_space_id
-PORT=8080
-NODE_ENV=production
+**Team members not added?**
+```bash
+npm run bulk-import -- --type=individuals --verbose
 ```
 
-### Recommended Deployment Platforms
+**Import seems broken?**
+```bash
+npm run bulk-import -- --dry-run --limit=5 --verbose
+```
 
-- **Heroku**: Easy deployment with automatic SSL
-- **Railway**: Simple Node.js hosting
-- **DigitalOcean App Platform**: Managed containers
-- **AWS Elastic Beanstalk**: Scalable hosting
+**Need to test webhooks?**
+```bash
+npm run test-webhook
+```
 
-## Troubleshooting
+## 📚 Documentation
 
-### Common Issues
+- **[Architecture Guide](docs/ARCHITECTURE.md)** - System design and data flow
+- **[API Reference](docs/API_REFERENCE.md)** - Method documentation and examples  
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
-1. **"Access token required"**: Check your `STORYBLOK_ACCESS_TOKEN` in `.env`
-2. **"Space not found"**: Verify your `STORYBLOK_SPACE_ID`
-3. **Webhook not receiving data**: Check Raisely webhook configuration
-4. **Content type errors**: Ensure `fundraiser` content type exists in Storyblok
+## 🚀 Quick Commands
 
-### Debug Mode
+```bash
+# Full import (teams first, then individuals)
+npm run bulk-import
 
-Set `NODE_ENV=development` for detailed error messages and request logging.
+# Import with verbose logging
+npm run bulk-import -- --verbose
 
-## License
+# Test with dry run
+npm run bulk-import -- --dry-run --limit=10
 
-MIT License - see LICENSE file for details.
+# Import only teams
+npm run bulk-import -- --type=teams
+
+# Import only individuals  
+npm run bulk-import -- --type=individuals
+
+# Start webhook server
+npm start
+
+# Fetch fresh data from Raisely
+npm run sync-data
+```
+
+## 📄 License
+
+MIT License

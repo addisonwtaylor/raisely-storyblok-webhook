@@ -14,27 +14,9 @@ class WebhookController {
       Logger.webhook('Received request');
       
       // Validate webhook secret if configured
-      const webhookSecret = process.env.RAISELY_WEBHOOK_SECRET;
-      if (webhookSecret) {
-        const providedSecret = req.body.secret;
-        
-        if (!providedSecret) {
-          Logger.error('Webhook secret required but not provided');
-          return res.status(401).json({ 
-            error: 'Unauthorized', 
-            message: 'Webhook secret required' 
-          });
-        }
-        
-        if (providedSecret !== webhookSecret) {
-          Logger.error('Invalid webhook secret provided');
-          return res.status(403).json({ 
-            error: 'Forbidden', 
-            message: 'Invalid webhook secret' 
-          });
-        }
-        
-        Logger.success('Webhook secret validated');
+      const secretValidation = this.validateWebhookSecret(req.body.secret);
+      if (secretValidation.error) {
+        return res.status(secretValidation.status).json(secretValidation.response);
       }
       
       const webhookData = req.body;
@@ -57,11 +39,40 @@ class WebhookController {
       // Real Raisely webhooks have data.data, test webhooks have data.profile
       const profileData = webhookData.data.data || webhookData.data.profile || webhookData.data;
       
+      // Check if this is a team profile
+      if (WebhookController.isTeamProfile(profileData)) {
+        Logger.info(`Processing team profile: ${profileData.name}`);
+        
+        // Extract and validate team data
+        const teamData = WebhookController.extractTeamData(profileData);
+        
+        if (!teamData) {
+          Logger.warning('Could not extract valid team data from webhook');
+          return res.status(400).json({ 
+            error: 'Invalid team data', 
+            message: 'Required fields missing' 
+          });
+        }
 
-      
+        // Sync team to Storyblok
+        const result = await storyblokService.syncTeam(teamData, eventType);
 
+        if (result.action === 'created') {
+          Logger.success(`Created team: ${teamData.name}`);
+        } else if (result.action === 'updated') {
+          Logger.success(`Updated team: ${teamData.name}`);
+        }
+
+        // Return success response for team
+        return res.status(200).json({ 
+          success: true, 
+          message: 'Team synced successfully',
+          team: teamData.name,
+          campaign: teamData.campaign
+        });
+      }
       
-      // Extract and validate required fields
+      // Extract and validate fundraiser data (individual profiles)
       const extractedData = WebhookController.extractFundraiserData(profileData);
       
       if (!extractedData) {
@@ -82,8 +93,18 @@ class WebhookController {
         });
       }
 
-      // Sync to Storyblok, passing the event type
-      const result = await storyblokService.syncFundraiser(extractedData, eventType);
+      // Check if fundraiser is part of a team
+      let teamData = null;
+      if (profileData.parent && WebhookController.isTeamProfile(profileData.parent)) {
+        teamData = {
+          name: profileData.parent.name,
+          path: profileData.parent.path
+        };
+        Logger.info(`Fundraiser is part of team: ${teamData.name}`);
+      }
+
+      // Sync to Storyblok, passing the event type and team data
+      const result = await storyblokService.syncFundraiser(extractedData, eventType, teamData);
 
       if (result.action === 'created') {
         Logger.success(`Created story: ${extractedData.name}`);
@@ -96,7 +117,8 @@ class WebhookController {
         success: true, 
         message: 'Fundraiser synced successfully',
         fundraiser: extractedData.name,
-        campaign: extractedData.campaign
+        campaign: extractedData.campaign,
+        team: teamData?.name || null
       });
 
     } catch (error) {
@@ -105,6 +127,122 @@ class WebhookController {
         error: 'Webhook processing failed', 
         message: error.message 
       });
+    }
+  }
+
+  /**
+   * Validate webhook secret
+   */
+  validateWebhookSecret(providedSecret) {
+    const webhookSecret = process.env.RAISELY_WEBHOOK_SECRET;
+    
+    if (!webhookSecret) {
+      return { error: false }; // No secret configured, skip validation
+    }
+    
+    if (!providedSecret) {
+      Logger.error('Webhook secret required but not provided');
+      return {
+        error: true,
+        status: 401,
+        response: { 
+          error: 'Unauthorized', 
+          message: 'Webhook secret required' 
+        }
+      };
+    }
+    
+    if (providedSecret !== webhookSecret) {
+      Logger.error('Invalid webhook secret provided');
+      return {
+        error: true,
+        status: 403,
+        response: { 
+          error: 'Forbidden', 
+          message: 'Invalid webhook secret' 
+        }
+      };
+    }
+    
+    Logger.success('Webhook secret validated');
+    return { error: false };
+  }
+
+  /**
+   * Check if profile is a team (GROUP type with isCampaignProfile: false)
+   */
+  static isTeamProfile(profile) {
+    return profile.type === 'GROUP' && profile.isCampaignProfile === false;
+  }
+
+  /**
+   * Extract team data from Raisely profile
+   */
+  static extractTeamData(raiselyProfile) {
+    try {
+      const profile = raiselyProfile.profile || raiselyProfile;
+      
+      // Required fields validation
+      if (!profile.name) {
+        Logger.warning('Missing required field: name');
+        return null;
+      }
+
+      if (!profile.path) {
+        Logger.warning('Missing required field: path (used for slug)');
+        return null;
+      }
+
+      // Extract campaign information
+      let campaignName = 'Default Campaign';
+      
+      if (profile.campaign) {
+        campaignName = profile.campaign.name || profile.campaign.title || profile.campaign;
+      } else if (profile.campaignName) {
+        campaignName = profile.campaignName;
+      } else if (profile.parent) {
+        // Find the actual campaign by traversing parent chain
+        campaignName = WebhookController.findCampaignFromParent(profile.parent);
+      } else if (profile.path) {
+        // Extract campaign from path if available
+        const pathParts = profile.path.split('/');
+        if (pathParts.length > 1) {
+          campaignName = pathParts[0];
+        }
+      }
+
+      // Extract amounts (teams can also have goals and totals)
+      const targetAmount = WebhookController.normalizeAmount(profile.goal || profile.target || profile.targetAmount || 0);
+      const raisedAmount = WebhookController.normalizeAmount(profile.total || profile.raisedAmount || 0);
+
+      // Build profile URL
+      let profileUrl = '';
+      if (profile.url) {
+        profileUrl = profile.url;
+      } else if (profile.campaign?.url && profile.path) {
+        const baseUrl = profile.campaign.url.replace(/\/$/, '');
+        profileUrl = `${baseUrl}/${profile.path}`;
+      } else if (profile.path) {
+        profileUrl = profile.path;
+      }
+
+      const extractedData = {
+        name: profile.name,
+        campaign: campaignName,
+        description: profile.description || profile.story || '',
+        targetAmount,
+        raisedAmount,
+        profileUrl,
+        raiselyId: profile.uuid || profile.id || '',
+        path: profile.path || '',
+        status: profile.status || 'DRAFT'
+      };
+
+      return extractedData;
+
+    } catch (error) {
+      Logger.error('Error extracting team data', error);
+      return null;
     }
   }
 
@@ -135,8 +273,8 @@ class WebhookController {
       } else if (profile.campaignName) {
         campaignName = profile.campaignName;
       } else if (profile.parent) {
-        // Raisely webhook has parent.name for campaign
-        campaignName = profile.parent.name;
+        // Find the actual campaign by traversing parent chain
+        campaignName = WebhookController.findCampaignFromParent(profile.parent);
       } else if (profile.path) {
         // Extract campaign from path if available
         const pathParts = profile.path.split('/');
@@ -150,13 +288,17 @@ class WebhookController {
       const targetAmount = WebhookController.normalizeAmount(profile.goal || profile.target || profile.targetAmount || 0);
       const raisedAmount = WebhookController.normalizeAmount(profile.total || profile.raisedAmount || 0);
 
-      // Build profile URL
+      // Build profile URL - prefer provided URL, otherwise construct from campaign URL if available
       let profileUrl = '';
       if (profile.url) {
         profileUrl = profile.url;
+      } else if (profile.campaign?.url && profile.path) {
+        // Use campaign URL to construct profile URL
+        const baseUrl = profile.campaign.url.replace(/\/$/, ''); // Remove trailing slash
+        profileUrl = `${baseUrl}/${profile.path}`;
       } else if (profile.path) {
-        // Construct URL if we have a path
-        profileUrl = `https://your-raisely-domain.raisely.com/${profile.path}`;
+        // Fallback: leave as relative path if no domain available
+        profileUrl = profile.path;
       }
 
       const extractedData = {
@@ -171,8 +313,6 @@ class WebhookController {
         status: profile.status || 'DRAFT' // Default to DRAFT if no status
       };
 
-
-
       return extractedData;
 
     } catch (error) {
@@ -182,17 +322,63 @@ class WebhookController {
   }
 
   /**
-   * Normalize amount values (handle cents vs dollars)
+   * Find the actual campaign by traversing parent hierarchy
+   * Campaigns have isCampaignProfile: true, teams/groups have false
+   */
+  static findCampaignFromParent(parent) {
+    if (!parent) {
+      return 'Default Campaign';
+    }
+    
+    // If this parent is the campaign profile, use its name
+    if (parent.isCampaignProfile === true) {
+      return parent.name;
+    }
+    
+    // If this parent has a parent, traverse up the chain
+    if (parent.parent) {
+      return WebhookController.findCampaignFromParent(parent.parent);
+    }
+    
+    // Fallback to the current parent name if we can't find a campaign
+    return parent.name || 'Default Campaign';
+  }
+
+  /**
+   * Normalize amount values (convert from pence/cents to main currency unit)
+   * Raisely stores amounts in the smallest currency unit (e.g., pence for GBP, cents for USD)
    */
   static normalizeAmount(amount) {
     if (!amount || isNaN(amount)) return 0;
     
-    // If amount is likely in cents (> 1000), convert to dollars
-    if (amount > 1000) {
-      return Math.round(amount / 100);
-    }
+    // Convert from pence/cents to main currency unit (e.g., 500 pence → £5.00)
+    return parseFloat((amount / 100).toFixed(2));
+  }
+
+  /**
+   * Helper method to load and validate test data
+   */
+  async loadTestData(filename) {
+    const testDataPath = path.join(__dirname, `../../test-data/${filename}`);
     
-    return Math.round(amount);
+    if (!fs.existsSync(testDataPath)) {
+      throw new Error(`Test data file not found: ${filename}`);
+    }
+
+    const testDataContent = fs.readFileSync(testDataPath, 'utf8');
+    let testData;
+    
+    try {
+      testData = JSON.parse(testDataContent);
+    } catch (parseError) {
+      throw new Error(`Invalid JSON in ${filename}: ${parseError.message}`);
+    }
+
+    if (!testData.data || !testData.data.data) {
+      throw new Error(`Invalid test data structure in ${filename}. Must have: { data: { data: { ... } } }`);
+    }
+
+    return testData;
   }
 
   /**
@@ -200,42 +386,15 @@ class WebhookController {
    */
   async testWebhookCreated(req, res) {
     try {
-      const testDataPath = path.join(__dirname, '../../test-data/profile-created-webhook.json');
-      
-      if (!fs.existsSync(testDataPath)) {
-        return res.status(400).json({ 
-          error: 'Test data file not found', 
-          message: 'Please create and populate test-data/profile-created-webhook.json with real webhook data',
-          path: testDataPath
-        });
-      }
-
-      const testDataContent = fs.readFileSync(testDataPath, 'utf8');
-      let testData;
-      
-      try {
-        testData = JSON.parse(testDataContent);
-      } catch (parseError) {
-        return res.status(400).json({ 
-          error: 'Invalid JSON in test data file', 
-          message: 'Please check the JSON syntax in profile-created-webhook.json',
-          parseError: parseError.message
-        });
-      }
-
-      if (!testData.data || !testData.data.data) {
-        return res.status(400).json({ 
-          error: 'Invalid test data structure', 
-          message: 'Test data must have the structure: { data: { data: { ... } } }'
-        });
-      }
-
+      const testData = await this.loadTestData('profile-created-webhook.json');
       Logger.test('Testing profile.created event with real webhook data');
       req.body = testData;
       await this.handleRaiselyWebhook(req, res);
-
     } catch (error) {
-      res.status(500).json({ error: 'Test profile.created failed', message: error.message });
+      res.status(400).json({ 
+        error: 'Test profile.created failed', 
+        message: error.message 
+      });
     }
   }
 
@@ -244,42 +403,15 @@ class WebhookController {
    */
   async testWebhookUpdated(req, res) {
     try {
-      const testDataPath = path.join(__dirname, '../../test-data/profile-updated-webhook.json');
-      
-      if (!fs.existsSync(testDataPath)) {
-        return res.status(400).json({ 
-          error: 'Test data file not found', 
-          message: 'Please create and populate test-data/profile-updated-webhook.json with real webhook data',
-          path: testDataPath
-        });
-      }
-
-      const testDataContent = fs.readFileSync(testDataPath, 'utf8');
-      let testData;
-      
-      try {
-        testData = JSON.parse(testDataContent);
-      } catch (parseError) {
-        return res.status(400).json({ 
-          error: 'Invalid JSON in test data file', 
-          message: 'Please check the JSON syntax in profile-updated-webhook.json',
-          parseError: parseError.message
-        });
-      }
-
-      if (!testData.data || !testData.data.data) {
-        return res.status(400).json({ 
-          error: 'Invalid test data structure', 
-          message: 'Test data must have the structure: { data: { data: { ... } } }'
-        });
-      }
-
+      const testData = await this.loadTestData('profile-updated-webhook.json');
       Logger.test('Testing profile.updated event with real webhook data');
       req.body = testData;
       await this.handleRaiselyWebhook(req, res);
-
     } catch (error) {
-      res.status(500).json({ error: 'Test profile.updated failed', message: error.message });
+      res.status(400).json({ 
+        error: 'Test profile.updated failed', 
+        message: error.message 
+      });
     }
   }
 
